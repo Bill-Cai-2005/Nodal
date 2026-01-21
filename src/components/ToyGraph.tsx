@@ -1,8 +1,12 @@
-import React, { useMemo, useRef, useEffect, useState } from "react";
+import { useMemo, useRef, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import PageHeader from "./PageHeader";
 
 // Define a basic interface for our graph data
 interface Node {
   id: number;
+  name: string;
+  sectionId: string;
   x?: number;
   y?: number;
   fx?: number | null;
@@ -15,10 +19,12 @@ interface Link {
 }
 
 const ToyGraph = () => {
+  const navigate = useNavigate();
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const [ForceGraph2D, setForceGraph2D] = useState<any>(null);
   const [resetKey, setResetKey] = useState(0);
+  const [hoveredNode, setHoveredNode] = useState<Node | null>(null);
 
   useEffect(() => {
     // Only import on the client side
@@ -39,11 +45,26 @@ const ToyGraph = () => {
     window.addEventListener("resize", updateDimensions);
     updateDimensions(); // Initial call
 
-    return () => window.removeEventListener("resize", updateDimensions);
+    return () => {
+      window.removeEventListener("resize", updateDimensions);
+    };
   }, []);
 
+  const sectionNames = [
+    { name: "Performance", sectionId: "performance" },
+    { name: "Portfolio", sectionId: "portfolio" },
+    { name: "Team", sectionId: "team" },
+    { name: "Blog", sectionId: "blog" },
+    { name: "ULTRACHAOS", sectionId: "ultra-chaos" },
+    { name: "Join", sectionId: "join" },
+  ];
+
   const data = useMemo(() => {
-    const nodes: Node[] = [...Array(6).keys()].map((i) => ({ id: i }));
+    const nodes: Node[] = [...Array(6).keys()].map((i) => ({
+      id: i,
+      name: sectionNames[i].name,
+      sectionId: sectionNames[i].sectionId,
+    }));
     const links: Link[] = [];
 
     // Ensure all nodes are connected by creating a connected graph
@@ -85,12 +106,32 @@ const ToyGraph = () => {
     setResetKey((prev) => prev + 1);
   };
 
+  const handleNodeClick = (node: Node, event?: MouseEvent) => {
+    if (event) {
+      event.stopPropagation();
+    }
+    if (node.sectionId === "ultra-chaos") {
+      navigate("/ultra-chaos");
+    } else {
+      // All black nodes navigate to blogs page
+      navigate("/blogs");
+    }
+  };
+
+  const handleContainerClick = () => {
+    resetNodes();
+  };
+
+  const handleNodeHover = (node: Node | null) => {
+    setHoveredNode(node);
+  };
+
   if (!ForceGraph2D || dimensions.width === 0) {
     return (
       <div
         ref={containerRef}
         style={{
-          background: "#ffffff",
+          background: "#f5f5f5",
           height: "100vh",
           width: "100%",
           display: "flex",
@@ -107,55 +148,65 @@ const ToyGraph = () => {
   return (
     <div
       ref={containerRef}
+      onClick={handleContainerClick}
       style={{
-        background: "#ffffff",
+        background: "#f5f5f5",
         height: "100vh",
         width: "100%",
-        position: "relative",
+        position: "absolute",
+        top: 0,
+        left: 0,
+        cursor: hoveredNode ? "pointer" : "default",
+        zIndex: 0,
       }}
     >
-      <button
-        onClick={resetNodes}
+      <div onClick={(e) => e.stopPropagation()}>
+        <PageHeader />
+      </div>
+      <div
         style={{
           position: "absolute",
-          top: "20px",
-          right: "20px",
+          bottom: "60px",
+          left: "50%",
+          transform: "translateX(-50%)",
           zIndex: 10,
-          padding: "0.75rem 1.5rem",
-          backgroundColor: "#000000",
-          color: "#ffffff",
-          border: "none",
-          borderRadius: "8px",
-          cursor: "pointer",
           fontSize: "0.875rem",
-          fontWeight: 600,
-          boxShadow: "0 2px 8px rgba(0, 0, 0, 0.2)",
-          transition: "all 0.2s ease",
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.backgroundColor = "#333333";
-          e.currentTarget.style.transform = "translateY(-2px)";
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.backgroundColor = "#000000";
-          e.currentTarget.style.transform = "translateY(0)";
+          color: "#666666",
+          fontFamily: "Montserrat, sans-serif",
+          pointerEvents: "none",
         }}
       >
-        Reset
-      </button>
+        click anywhere to reset
+      </div>
       <ForceGraph2D
         key={resetKey}
         graphData={data}
         width={dimensions.width}
         height={dimensions.height}
         nodeRelSize={8}
-        nodeColor={() => "#000000"}
+        nodeColor={(node: Node) =>
+          node.sectionId === "ultra-chaos" ? "#8B0000" : "#000000"
+        }
         linkColor={() => "#444"}
         linkDirectionalParticles={2}
         linkDirectionalParticleSpeed={0.005}
         d3VelocityDecay={0.3}
         enableZoomInteraction={false}
         enablePanInteraction={false}
+        nodeLabel={() => ""}
+        onNodeClick={(node: Node, event?: MouseEvent) => {
+          if (event) {
+            event.stopPropagation();
+          }
+          handleNodeClick(node, event);
+        }}
+        onNodeHover={(node: Node | null) => {
+          if (node) {
+            handleNodeHover(node);
+          } else {
+            setHoveredNode(null);
+          }
+        }}
         onNodeDragEnd={(node: Node) => {
           // This "pins" the node in place after dragging
           node.fx = node.x;

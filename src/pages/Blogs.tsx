@@ -62,22 +62,26 @@ const Blogs = () => {
     >
       <PageHeader />
       <div style={{ maxWidth: "900px", margin: "0 auto" }}>
-        <button
+        <div
           onClick={() => navigate("/")}
           style={{
-            marginBottom: "2rem",
-            padding: "0.5rem 1rem",
-            backgroundColor: "transparent",
-            color: "#000000",
-            border: "1px solid #000000",
-            borderRadius: "6px",
+            width: "32px",
+            height: "32px",
+            borderRadius: "50%",
+            backgroundColor: "#000000",
             cursor: "pointer",
-            fontSize: "0.875rem",
-            fontWeight: 600,
+            marginBottom: "2rem",
+            transition: "opacity 0.2s ease, transform 0.2s ease",
           }}
-        >
-          ← Back
-        </button>
+          onMouseEnter={(e) => {
+            e.currentTarget.style.opacity = "0.7";
+            e.currentTarget.style.transform = "scale(1.1)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.opacity = "1";
+            e.currentTarget.style.transform = "scale(1)";
+          }}
+        />
 
         {loading ? (
           <p

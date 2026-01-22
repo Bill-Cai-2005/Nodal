@@ -1,11 +1,12 @@
 import "./App.css";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import ToyGraph from "./components/ToyGraph";
-import UltraChaos from "./pages/UltraChaos";
+import MobileHome from "./pages/MobileHome";
 import BlogManagement from "./pages/BlogManagement";
 import Blog from "./pages/Blog";
 import Blogs from "./pages/Blogs";
 import About from "./pages/About";
+import Legal from "./pages/Legal";
 
 function App() {
   return (
@@ -16,11 +17,14 @@ function App() {
           element={
             <div className="app">
               <ToyGraph />
+              <div className="mobile-home">
+                <MobileHome />
+              </div>
             </div>
           }
         />
-        <Route path="/ultra-chaos" element={<UltraChaos />} />
         <Route path="/about" element={<About />} />
+        <Route path="/legal" element={<Legal />} />
         <Route path="/blogs" element={<Blogs />} />
         <Route path="/blogManagement" element={<BlogManagement />} />
         <Route path="/blog/:id" element={<Blog />} />

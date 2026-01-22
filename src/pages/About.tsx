@@ -11,7 +11,6 @@ const About = () => {
     display: "flex",
     flexDirection: "column" as const,
     alignItems: "center",
-    justifyContent: "center",
     position: "relative" as const,
   };
 
@@ -70,7 +69,7 @@ const About = () => {
   return (
     <div style={containerStyle} className="about-container">
       <PageHeader />
-      <div className="container">
+      <div className="container" style={{ marginTop: "100px" }}>
         <img 
           src="/NodalLogo.png" 
           alt="Nodal" 
@@ -81,13 +80,9 @@ const About = () => {
             Nodal is an equity research collective.
           </p>
           <p style={paragraphStyle}>
-            We manage a portfolio of 1.2 Million USD to invest in our research.
+            We invest a portfolio of 1.2 Million USD into our research.
           </p>
           <h1 style={sectionTitleStyle}>A note from the founder</h1>
-          <p style={paragraphStyle}>
-            I bought my first stock at 13 in 2018.
-            I immediately fell in love. Not with the money, but with the game.
-          </p>
           <p style={paragraphStyle}>
             At 18 I started {" "}
             <a
@@ -107,7 +102,7 @@ const About = () => {
             Looking back these numbers don't really mean anything.
           </p>
           <p style={paragraphStyle}>
-            I'm dedicating my next few years to craftng a killer team and sharing the absolute best research time can buy.
+            I'm dedicating my next few years to sharing the absolute best research time can buy.
           </p>
         </div>
         <div

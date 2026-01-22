@@ -55,7 +55,7 @@ const ToyGraph = () => {
     { name: "Portfolio", sectionId: "portfolio" },
     { name: "Team", sectionId: "team" },
     { name: "Blog", sectionId: "blog" },
-    { name: "ULTRACHAOS", sectionId: "ultra-chaos" },
+    { name: "About", sectionId: "about" },
     { name: "Join", sectionId: "join" },
   ];
 
@@ -110,8 +110,8 @@ const ToyGraph = () => {
     if (event) {
       event.stopPropagation();
     }
-    if (node.sectionId === "ultra-chaos") {
-      navigate("/ultra-chaos");
+    if (node.sectionId === "about") {
+      navigate("/about");
     } else {
       // All black nodes navigate to blogs page
       navigate("/blogs");
@@ -149,6 +149,7 @@ const ToyGraph = () => {
     <div
       ref={containerRef}
       onClick={handleContainerClick}
+      className="toy-graph-container"
       style={{
         background: "#f5f5f5",
         height: "100vh",
@@ -176,7 +177,8 @@ const ToyGraph = () => {
           pointerEvents: "none",
         }}
       >
-        click anywhere to reset
+        Black Nodes lead to Research - Red Node leads to About
+
       </div>
       <ForceGraph2D
         key={resetKey}
@@ -185,7 +187,7 @@ const ToyGraph = () => {
         height={dimensions.height}
         nodeRelSize={8}
         nodeColor={(node: Node) =>
-          node.sectionId === "ultra-chaos" ? "#8B0000" : "#000000"
+          node.sectionId === "about" ? "#8B0000" : "#000000"
         }
         linkColor={() => "#444"}
         linkDirectionalParticles={2}

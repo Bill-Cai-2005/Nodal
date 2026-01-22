@@ -49,29 +49,65 @@ button {
   padding-right: 0;
 }
 
+/* Hide mobile home on desktop */
+.mobile-home {
+  display: none;
+}
+
 @media (max-width: 768px) {
   .about-content {
     padding-left: 1rem;
     padding-right: 1rem;
   }
-}
 
-.ultrachaos-title {
-  font-size: 8rem;
-  font-weight: 800;
-  color: #8B0000;
-  margin-bottom: 1.5rem;
-  text-align: center;
-}
+  /* Set margin-top to 50px for About and Legal pages on mobile */
+  .about-container .container {
+    margin-top: 20px !important;
+  }
 
-@media (max-width: 768px) {
-  .ultrachaos-title {
-    font-size: 4rem;
+  /* Hide ToyGraph on mobile */
+  .toy-graph-container {
+    display: none !important;
+  }
+
+  /* Show mobile home on mobile */
+  .mobile-home {
+    display: block !important;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100vh;
+    z-index: 100;
+  }
+
+  /* Fix app container on mobile */
+  .app {
+    overflow: visible;
+    height: auto;
+  }
+
+  /* Hide red node in header on mobile */
+  .header-red-node {
+    display: none !important;
+  }
+
+  /* Center the title on mobile */
+  .page-header-container {
+    justify-content: center !important;
+  }
+
+  .page-header-title {
+    margin: 0 auto;
+  }
+
+  /* Show mobile footer on mobile */
+  .mobile-footer {
+    display: block !important;
   }
 }
 
-@media (max-width: 480px) {
-  .ultrachaos-title {
-    font-size: 2.5rem;
-  }
+/* Hide mobile footer on desktop */
+.mobile-footer {
+  display: none;
 }

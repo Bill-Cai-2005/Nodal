@@ -10,6 +10,7 @@ const PageHeader = ({ researchColor = "#000000", zIndex = 10 }: PageHeaderProps)
 
   return (
     <div
+      className="page-header-container"
       style={{
         position: "absolute",
         top: "40px",
@@ -25,6 +26,7 @@ const PageHeader = ({ researchColor = "#000000", zIndex = 10 }: PageHeaderProps)
     >
       <div
         onClick={() => navigate("/")}
+        className="page-header-title"
         style={{
           fontFamily: "Montserrat, sans-serif",
           fontWeight: 700,
@@ -44,7 +46,8 @@ const PageHeader = ({ researchColor = "#000000", zIndex = 10 }: PageHeaderProps)
         <span style={{ color: researchColor }}>Research</span>
       </div>
       <div
-        onClick={() => navigate("/about")}
+        onClick={() => navigate("/legal")}
+        className="header-red-node"
         style={{
           width: "32px",
           height: "32px",

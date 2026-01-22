@@ -93,8 +93,8 @@ const BlogManagement = () => {
 
   const handleUnlock = () => {
     // Passcode is optional - allow access without it
-    setIsAuthorized(true);
-    setError("");
+      setIsAuthorized(true);
+      setError("");
   };
 
   const handleProfilePictureUpload = useCallback(async (
@@ -127,13 +127,13 @@ const BlogManagement = () => {
       const data = await response.json();
       const imageUrl = data.url;
 
-      if (index >= 0) {
-        setBlogs((prev) => {
-          const updated = [...prev];
-          updated[index].authorProfilePicture = imageUrl;
-          return updated;
-        });
-      }
+        if (index >= 0) {
+          setBlogs((prev) => {
+            const updated = [...prev];
+            updated[index].authorProfilePicture = imageUrl;
+            return updated;
+          });
+        }
 
       return imageUrl;
     } catch (err) {
@@ -205,8 +205,8 @@ const BlogManagement = () => {
         id: blog._id || blog.id,
       }));
       setBlogs(normalizedBlogs);
-      setError("");
-      alert("Blogs saved successfully!");
+    setError("");
+    alert("Blogs saved successfully!");
     } catch (err: any) {
       console.error("Error saving blogs:", err);
       setError(err.message || "Failed to save blogs. Make sure the backend server is running.");
@@ -585,25 +585,25 @@ const BlogManagement = () => {
             >
               {loading ? "Loading..." : "Refresh"}
             </button>
-            <button
-              type="button"
-              onClick={() => {
-                setIsAuthorized(false);
-                setPasscode("");
-              }}
-              style={{
-                padding: "0.5rem 1rem",
-                backgroundColor: "#000000",
-                color: "#ffffff",
-                border: "none",
-                borderRadius: "6px",
-                cursor: "pointer",
-                fontSize: "0.875rem",
-                fontWeight: 600,
-              }}
-            >
-              Logout
-            </button>
+          <button
+            type="button"
+            onClick={() => {
+              setIsAuthorized(false);
+              setPasscode("");
+            }}
+            style={{
+              padding: "0.5rem 1rem",
+              backgroundColor: "#000000",
+              color: "#ffffff",
+              border: "none",
+              borderRadius: "6px",
+              cursor: "pointer",
+              fontSize: "0.875rem",
+              fontWeight: 600,
+            }}
+          >
+            Logout
+          </button>
           </div>
         </div>
 

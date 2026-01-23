@@ -16,6 +16,7 @@ const allowedOrigins = [
   process.env.FRONTEND_URL, // e.g., https://your-app.vercel.app
   "http://localhost:5173",
   "http://localhost:3000",
+  "https://nodalresearch.com",
 ].filter(Boolean);
 
 // 2. Correct CORS Middleware Implementation

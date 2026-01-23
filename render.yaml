@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: nodal-backend
+    env: node
+    plan: free
+    buildCommand: cd server && npm install && npm run build
+    startCommand: cd server && npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      # Add these in Render Dashboard → Environment Variables:
+      # - MONGO_URI: Your MongoDB Atlas connection string
+      # - FRONTEND_URL: Your Vercel frontend URL (e.g., https://your-project.vercel.app)
+      # - ADMIN_PASSCODE: (optional) Passcode for blog management

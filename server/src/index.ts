@@ -14,7 +14,35 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Middleware
-app.use(cors());
+// CORS configuration - allow Vercel frontend and localhost for development
+const allowedOrigins = [
+  process.env.FRONTEND_URL, // Your Vercel URL (set in Render env vars)
+  "http://localhost:5173", // Vite dev server
+  "http://localhost:3000", // Alternative local dev
+].filter(Boolean); // Remove undefined values
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, Postman, etc.) in development only
+    if (!origin) {
+      if (process.env.NODE_ENV === "production") {
+        return callback(new Error("Not allowed by CORS"));
+      }
+      return callback(null, true);
+    }
+    
+    // In production, only allow FRONTEND_URL
+    // In development, allow localhost origins
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else if (process.env.NODE_ENV !== "production" && origin.startsWith("http://localhost")) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  credentials: true,
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

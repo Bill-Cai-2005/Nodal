@@ -25,12 +25,10 @@ async function connectDB() {
   }
 
   if (!cached.promise) {
-    const opts: mongoose.ConnectOptions = {
-      bufferCommands: false,
-    };
-
     const mongoUri = getMongoUri();
-    cached.promise = mongoose.connect(mongoUri, opts).then((mongoose) => {
+    cached.promise = mongoose.connect(mongoUri, {
+      bufferCommands: false,
+    } as mongoose.ConnectOptions).then((mongoose) => {
       return mongoose;
     });
   }

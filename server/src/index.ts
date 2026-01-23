@@ -1,6 +1,4 @@
 import dotenv from "dotenv";
-
-// Load environment variables FIRST, before importing any modules that use them
 dotenv.config();
 
 import express from "express";
@@ -13,39 +11,36 @@ import uploadImageRouter from "./routes/uploadImage.js";
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Middleware
-// CORS configuration - allow Vercel frontend and localhost for development
+// 1. Define allowed origins clearly
 const allowedOrigins = [
-  process.env.FRONTEND_URL, // Your Vercel URL (set in Render env vars)
-  "http://localhost:5173", // Vite dev server
-  "http://localhost:3000", // Alternative local dev
-].filter(Boolean); // Remove undefined values
+  process.env.FRONTEND_URL, // e.g., https://your-app.vercel.app
+  "http://localhost:5173",
+  "http://localhost:3000",
+].filter(Boolean);
 
+// 2. Correct CORS Middleware Implementation
 app.use(cors({
-  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-    // Allow requests with no origin (mobile apps, Postman, etc.) in development only
-    if (!origin) {
-      if (process.env.NODE_ENV === "production") {
-        return callback(new Error("Not allowed by CORS"));
-      }
-      return callback(null, true);
-    }
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like Postman or mobile apps)
+    if (!origin) return callback(null, true);
 
-    // In production, only allow FRONTEND_URL
-    // In development, allow localhost origins
-    if (allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else if (process.env.NODE_ENV !== "production" && origin.startsWith("http://localhost")) {
-      callback(null, true);
-    } else if (process.env.FRONTEND_URL && origin.includes(".vercel.app")) {
-      // Allow Vercel preview deployments
+    // Check if the origin is in our allowed list
+    const isAllowed = allowedOrigins.includes(origin);
+
+    // Check if it's a Vercel preview deployment
+    const isVercelPreview = origin.endsWith(".vercel.app");
+
+    if (isAllowed || isVercelPreview) {
       callback(null, true);
     } else {
       callback(new Error("Not allowed by CORS"));
     }
   },
   credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"]
 }));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

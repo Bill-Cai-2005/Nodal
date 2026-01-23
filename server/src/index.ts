@@ -22,7 +22,7 @@ const allowedOrigins = [
 ].filter(Boolean); // Remove undefined values
 
 app.use(cors({
-  origin: (origin, callback) => {
+  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
     // Allow requests with no origin (mobile apps, Postman, etc.) in development only
     if (!origin) {
       if (process.env.NODE_ENV === "production") {
@@ -30,12 +30,15 @@ app.use(cors({
       }
       return callback(null, true);
     }
-    
+
     // In production, only allow FRONTEND_URL
     // In development, allow localhost origins
     if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else if (process.env.NODE_ENV !== "production" && origin.startsWith("http://localhost")) {
+      callback(null, true);
+    } else if (process.env.FRONTEND_URL && origin.includes(".vercel.app")) {
+      // Allow Vercel preview deployments
       callback(null, true);
     } else {
       callback(new Error("Not allowed by CORS"));
@@ -56,12 +59,12 @@ app.use("/api/blogs", blogByIdRouter);
 app.use("/api/upload-image", uploadImageRouter);
 
 // Health check
-app.get("/health", (req, res) => {
+app.get("/health", (_req: express.Request, res: express.Response) => {
   res.json({ status: "ok" });
 });
 
 // Handle Chrome DevTools requests (harmless, can be ignored)
-app.get("/.well-known/appspecific/com.chrome.devtools.json", (req, res) => {
+app.get("/.well-known/appspecific/com.chrome.devtools.json", (_req: express.Request, res: express.Response) => {
   res.status(404).json({});
 });
 
@@ -84,10 +87,10 @@ const server = app.listen(PORT, () => {
 // Graceful shutdown handling
 const gracefulShutdown = async (signal: string) => {
   console.log(`\n${signal} received. Shutting down gracefully...`);
-  
+
   server.close(async () => {
     console.log("HTTP server closed.");
-    
+
     // Close MongoDB connection if it exists
     if (mongoose.connection.readyState !== 0) {
       try {
@@ -97,7 +100,7 @@ const gracefulShutdown = async (signal: string) => {
         console.error("Error closing MongoDB connection:", error);
       }
     }
-    
+
     process.exit(0);
   });
 
@@ -113,13 +116,13 @@ process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
 // Handle uncaught exceptions
-process.on("uncaughtException", (error) => {
+process.on("uncaughtException", (error: Error) => {
   console.error("Uncaught Exception:", error);
   gracefulShutdown("uncaughtException");
 });
 
 // Handle unhandled promise rejections
-process.on("unhandledRejection", (reason, promise) => {
+process.on("unhandledRejection", (reason: unknown, promise: Promise<unknown>) => {
   console.error("Unhandled Rejection at:", promise, "reason:", reason);
   gracefulShutdown("unhandledRejection");
 });

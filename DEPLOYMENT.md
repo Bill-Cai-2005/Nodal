@@ -31,12 +31,13 @@ git push origin main
 1. Go to [render.com](https://render.com) and sign up/login
 2. Click **"New +"** → **"Web Service"**
 3. Connect your GitHub repository
-4. Render will auto-detect the `render.yaml` file
-5. Configure the service:
+4. **If Render auto-detects `render.yaml`**: It should configure everything automatically
+5. **If you need to configure manually** (or if auto-detect fails):
    - **Name**: `nodal-backend` (or your preferred name)
    - **Environment**: `Node`
-   - **Build Command**: `cd server && npm install && npm run build`
-   - **Start Command**: `cd server && npm start`
+   - **Root Directory**: `server` ⚠️ **IMPORTANT**: Set this to `server`
+   - **Build Command**: `npm install && npm run build`
+   - **Start Command**: `npm start`
    - **Plan**: Free (or paid if you need better performance)
 
 ### Step 4: Set Environment Variables in Render

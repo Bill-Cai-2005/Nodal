@@ -22,14 +22,14 @@ router.post("/", async (req: Request, res: Response) => {
       uploadDir: uploadDir,
       keepExtensions: true,
       maxFileSize: 10 * 1024 * 1024, // 10MB
-      filter: (part) => {
+      filter: (part: any) => {
         return part.mimetype?.startsWith("image/") || false;
       },
       allowEmptyFiles: false,
     });
 
     return new Promise<void>((resolve) => {
-      form.parse(req, (err, fields, files) => {
+      form.parse(req, (err: any, fields: any, files: any) => {
         if (err) {
           console.error("Error parsing form:", err);
           res.status(400).json({ error: "Failed to parse form data" });

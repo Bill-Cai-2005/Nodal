@@ -7,6 +7,7 @@ import Blog from "./pages/Blog";
 import Blogs from "./pages/Blogs";
 import About from "./pages/About";
 import Legal from "./pages/Legal";
+import NotFound from "./pages/NotFound";
 
 function App() {
   return (
@@ -27,7 +28,9 @@ function App() {
         <Route path="/legal" element={<Legal />} />
         <Route path="/blogs" element={<Blogs />} />
         <Route path="/blogManagement" element={<BlogManagement />} />
+        <Route path="/BlogManagement" element={<BlogManagement />} />
         <Route path="/blog/:id" element={<Blog />} />
+        <Route path="*" element={<NotFound />} />
       </Routes>
     </Router>
   );

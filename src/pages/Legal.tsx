@@ -68,7 +68,8 @@ const Legal = () => {
         <img 
           src="/NodalLogo.png" 
           alt="Nodal" 
-          style={logoStyle}
+          style={{...logoStyle, cursor: "pointer"}}
+          onClick={() => navigate("/")}
         />
         <div style={contentWrapperStyle} className="about-content legal-content">
           <h1 style={sectionTitleStyle}>Legal Disclaimer: Nodal Research</h1>

@@ -68,7 +68,8 @@ const NotFound = () => {
         <img 
           src="/NodalLogo.png" 
           alt="Nodal" 
-          style={logoStyle}
+          style={{...logoStyle, cursor: "pointer"}}
+          onClick={() => navigate("/")}
         />
         <div style={contentWrapperStyle} className="about-content">
           <h1 style={titleStyle}>404</h1>

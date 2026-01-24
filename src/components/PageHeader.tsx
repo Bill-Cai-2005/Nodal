@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 
 interface PageHeaderProps {
   researchColor?: string;
@@ -7,6 +7,8 @@ interface PageHeaderProps {
 
 const PageHeader = ({ researchColor = "#000000", zIndex = 10 }: PageHeaderProps) => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const isHomepage = location.pathname === "/";
 
   return (
     <div
@@ -46,13 +48,13 @@ const PageHeader = ({ researchColor = "#000000", zIndex = 10 }: PageHeaderProps)
       <span style={{ color: researchColor }}>Research</span>
       </div>
       <div
-        onClick={() => navigate("/about")}
+        onClick={() => isHomepage ? navigate("/about") : navigate("/")}
         className="header-red-node"
         style={{
           width: "32px",
           height: "32px",
           borderRadius: "50%",
-          backgroundColor: "#8B0000",
+          backgroundColor: isHomepage ? "#8B0000" : "#000000",
           cursor: "pointer",
           transition: "opacity 0.2s ease, transform 0.2s ease",
         }}

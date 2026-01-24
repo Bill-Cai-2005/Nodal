@@ -74,7 +74,8 @@ const About = () => {
         <img 
           src="/NodalLogo.png" 
           alt="Nodal" 
-          style={logoStyle}
+          style={{...logoStyle, cursor: "pointer"}}
+          onClick={() => navigate("/")}
         />
         <div style={contentWrapperStyle} className="about-content">
           <p style={paragraphStyle} className="about-paragraph">

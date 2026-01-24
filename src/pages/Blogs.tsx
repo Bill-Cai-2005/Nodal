@@ -52,6 +52,16 @@ const Blogs = () => {
     navigate(`/blog/${postId}`);
   };
 
+  const logoStyle = {
+    marginBottom: "3rem",
+    marginLeft: "auto",
+    marginRight: "auto",
+    display: "block",
+    maxWidth: "150px",
+    width: "auto",
+    height: "auto",
+  };
+
   return (
     <div
       style={{
@@ -59,32 +69,25 @@ const Blogs = () => {
         background: "#f5f5f5",
         padding: "2rem",
         paddingTop: "140px", // Space for PageHeader (40px top + ~60px header height + 40px buffer)
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        position: "relative",
       }}
+      className="about-container"
     >
       <PageHeader />
-      <div style={{ maxWidth: "900px", margin: "0 auto" }}>
-        <div
-          onClick={() => navigate("/")}
-          style={{
-            width: "32px",
-            height: "32px",
-            borderRadius: "50%",
-            backgroundColor: "#000000",
-            cursor: "pointer",
-            marginBottom: "2rem",
-            transition: "opacity 0.2s ease, transform 0.2s ease",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.opacity = "0.7";
-            e.currentTarget.style.transform = "scale(1.1)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.opacity = "1";
-            e.currentTarget.style.transform = "scale(1)";
-          }}
-        />
+      <div style={{ maxWidth: "900px", margin: "0 auto", width: "100%" }}>
+        <div className="container" style={{ marginTop: "100px" }}>
+          <img 
+            src="/NodalLogo.png" 
+            alt="Nodal" 
+            style={{...logoStyle, cursor: "pointer"}}
+            onClick={() => navigate("/")}
+          />
 
-        {loading ? (
+          <div style={{ width: "100%" }}>
+          {loading ? (
           <p
             style={{
               textAlign: "center",
@@ -227,7 +230,30 @@ const Blogs = () => {
             })}
             </div>
           </>
-        )}
+          )}
+          </div>
+          <div
+            onClick={() => navigate("/")}
+            style={{
+              width: "32px",
+              height: "32px",
+              borderRadius: "50%",
+              backgroundColor: "#000000",
+              cursor: "pointer",
+              margin: "2rem auto",
+              display: "block",
+              transition: "opacity 0.2s ease, transform 0.2s ease",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.opacity = "0.7";
+              e.currentTarget.style.transform = "scale(1.1)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.opacity = "1";
+              e.currentTarget.style.transform = "scale(1)";
+            }}
+          />
+        </div>
       </div>
       <Footer />
     </div>

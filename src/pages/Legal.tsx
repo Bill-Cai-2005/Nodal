@@ -70,7 +70,7 @@ const Legal = () => {
           alt="Nodal" 
           style={logoStyle}
         />
-        <div style={contentWrapperStyle} className="about-content">
+        <div style={contentWrapperStyle} className="about-content legal-content">
           <h1 style={sectionTitleStyle}>Legal Disclaimer: Nodal Research</h1>
           
           <h2 style={sectionTitleStyle}>1. General Information & Non-Advisory Nature</h2>

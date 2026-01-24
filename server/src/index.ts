@@ -9,7 +9,7 @@ import blogByIdRouter from "./routes/blogById.js";
 import uploadImageRouter from "./routes/uploadImage.js";
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = Number(process.env.PORT) || 3001;
 
 // 1. Define allowed origins clearly
 const allowedOrigins = [
@@ -64,8 +64,8 @@ app.get("/.well-known/appspecific/com.chrome.devtools.json", (_req: express.Requ
   res.status(404).json({});
 });
 
-const server = app.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
+const server = app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server is running on http://0.0.0.0:${PORT}`);
 }).on("error", (error: NodeJS.ErrnoException) => {
   if (error.code === "EADDRINUSE") {
     console.error(`\n❌ Port ${PORT} is already in use!`);

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import PageHeader from "../components/PageHeader";
+import Footer from "../components/Footer";
 import { getApiEndpoint, getApiUrl } from "../utils/api";
 
 interface BlogItem {
@@ -278,6 +279,7 @@ const Blog = () => {
           </div>
         </article>
       </div>
+      <Footer />
     </div>
   );
 };

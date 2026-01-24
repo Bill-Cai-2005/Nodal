@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import PageHeader from "../components/PageHeader";
+import Footer from "../components/Footer";
 
 const About = () => {
   const navigate = useNavigate();
@@ -76,14 +77,26 @@ const About = () => {
           style={logoStyle}
         />
         <div style={contentWrapperStyle} className="about-content">
-          <p style={paragraphStyle}>
+          <p style={paragraphStyle} className="about-paragraph">
             Nodal is an equity research collective.
           </p>
-          <p style={paragraphStyle}>
-            We invest a portfolio of 1.2 Million USD into our research.
+          <p style={paragraphStyle} className="about-paragraph">
+            We commit 1.2 Million of internal capital to our research.
           </p>
-          <h1 style={sectionTitleStyle}>A note from the founder</h1>
-          <p style={paragraphStyle}>
+          <p style={paragraphStyle} className="about-paragraph mobile-marble-note">
+            We were previously {" "}
+            <a
+              href="https://www.marbleinvestments.ca/"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={linkStyle}
+            >
+              Marble-Investments
+            </a>
+            .
+          </p>
+          <h1 style={sectionTitleStyle} className="about-section-title founder-note">A note from the founder</h1>
+          <p style={paragraphStyle} className="about-paragraph founder-note">
             At 18 I started {" "}
             <a
               href="https://www.marbleinvestments.ca/"
@@ -95,13 +108,13 @@ const About = () => {
             </a>
             {" "}to prove myself to the world.
           </p>
-          <p style={paragraphStyle}>
-            Marble has since grown to 1.2 Million USD averaging 70% over 3 years
+          <p style={paragraphStyle} className="about-paragraph founder-note">
+            In 3 years Marble grew to 1.2 Million USD averaging 70% returns.
           </p>
-          <p style={paragraphStyle}>
+          <p style={paragraphStyle} className="about-paragraph founder-note">
             Looking back these numbers don't really mean anything.
           </p>
-          <p style={paragraphStyle}>
+          <p style={paragraphStyle} className="about-paragraph founder-note">
             I'm dedicating my next few years to sharing the absolute best research time can buy.
           </p>
         </div>
@@ -118,6 +131,7 @@ const About = () => {
           }}
         />
       </div>
+      <Footer />
     </div>
   );
 };

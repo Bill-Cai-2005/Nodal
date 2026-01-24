@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import PageHeader from "../components/PageHeader";
+import Footer from "../components/Footer";
 import { getApiEndpoint, getApiUrl } from "../utils/api";
 
 interface BlogItem {
@@ -228,6 +229,7 @@ const Blogs = () => {
           </>
         )}
       </div>
+      <Footer />
     </div>
   );
 };

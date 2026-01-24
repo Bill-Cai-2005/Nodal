@@ -27,40 +27,24 @@ const MobileHome = () => {
     marginTop: "20px",
   };
 
-  const nodeStyle = {
-    width: "32px",
-    height: "32px",
-    borderRadius: "50%",
-    cursor: "pointer",
-    marginBottom: "2rem",
-    transition: "opacity 0.2s ease, transform 0.2s ease",
-  };
-
-  const nodesContainerStyle = {
-    display: "flex",
-    flexDirection: "column" as const,
-    alignItems: "center",
-    gap: "2rem",
-    marginTop: "2rem",
-  };
-
   const footerStyle = {
     position: "fixed" as const,
-    bottom: 0,
+    bottom: "40px",
     left: 0,
     right: 0,
-    padding: "1rem",
-    textAlign: "center" as const,
-    backgroundColor: "#8B0000",
-    borderTop: "1px solid #e0e0e0",
-    fontFamily: "Montserrat, sans-serif",
-    fontSize: "0.875rem",
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 10,
   };
 
   const footerLinkStyle = {
-    color: "#ffffff",
+    fontFamily: "Montserrat, sans-serif",
+    fontSize: "0.875rem",
+    color: "#333333",
     textDecoration: "underline",
     cursor: "pointer",
+    transition: "opacity 0.2s ease",
   };
 
   return (
@@ -71,36 +55,83 @@ const MobileHome = () => {
         alt="Nodal" 
         style={logoStyle}
       />
-      <div style={nodesContainerStyle}>
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column" as const,
+          alignItems: "center",
+          gap: "1.5rem",
+          marginTop: "2rem",
+        }}
+      >
         <div
           onClick={() => navigate("/blogs")}
-          style={{...nodeStyle, backgroundColor: "#000000"}}
+          style={{
+            fontFamily: "Montserrat, sans-serif",
+            fontSize: "1.25rem",
+            color: "#000000",
+            cursor: "pointer",
+            textDecoration: "none",
+            transition: "opacity 0.2s ease",
+          }}
           onMouseEnter={(e) => {
             e.currentTarget.style.opacity = "0.7";
-            e.currentTarget.style.transform = "scale(1.2)";
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.opacity = "1";
-            e.currentTarget.style.transform = "scale(1)";
           }}
-        />
+        >
+          Research
+        </div>
         <div
           onClick={() => navigate("/about")}
-          style={{...nodeStyle, backgroundColor: "#8B0000"}}
+          style={{
+            fontFamily: "Montserrat, sans-serif",
+            fontSize: "1.25rem",
+            color: "#8B0000",
+            cursor: "pointer",
+            textDecoration: "none",
+            transition: "opacity 0.2s ease",
+          }}
           onMouseEnter={(e) => {
             e.currentTarget.style.opacity = "0.7";
-            e.currentTarget.style.transform = "scale(1.2)";
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.opacity = "1";
-            e.currentTarget.style.transform = "scale(1)";
           }}
-        />
+        >
+          About
+        </div>
+        <div
+          onClick={() => navigate("/newsletter")}
+          style={{
+            fontFamily: "Montserrat, sans-serif",
+            fontSize: "1.25rem",
+            color: "#000000",
+            cursor: "pointer",
+            textDecoration: "none",
+            transition: "opacity 0.2s ease",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.opacity = "0.7";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.opacity = "1";
+          }}
+        >
+          Newsletter
+        </div>
       </div>
       <div className="mobile-footer" style={footerStyle}>
         <span
           onClick={() => navigate("/legal")}
           style={footerLinkStyle}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.opacity = "0.7";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.opacity = "1";
+          }}
         >
           Legal Disclaimer
         </span>

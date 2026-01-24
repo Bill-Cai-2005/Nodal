@@ -2,7 +2,7 @@ import { useNavigate } from "react-router-dom";
 import PageHeader from "../components/PageHeader";
 import Footer from "../components/Footer";
 
-const NotFound = () => {
+const Newsletter = () => {
   const navigate = useNavigate();
 
   const containerStyle = {
@@ -11,7 +11,6 @@ const NotFound = () => {
     display: "flex",
     flexDirection: "column" as const,
     alignItems: "center",
-    justifyContent: "center",
     position: "relative" as const,
   };
 
@@ -34,10 +33,10 @@ const NotFound = () => {
 
   const titleStyle = {
     fontFamily: "Montserrat, sans-serif",
-    fontSize: "3rem",
+    fontSize: "2.5rem",
     fontWeight: 700,
     color: "#000000",
-    marginBottom: "1.5rem",
+    marginBottom: "2rem",
     textAlign: "center" as const,
   };
 
@@ -71,12 +70,9 @@ const NotFound = () => {
           style={logoStyle}
         />
         <div style={contentWrapperStyle} className="about-content">
-          <h1 style={titleStyle}>404</h1>
+          <h1 style={titleStyle} className="newsletter-title">Newsletter</h1>
           <p style={paragraphStyle}>
-            The page you're looking for doesn't exist.
-          </p>
-          <p style={paragraphStyle}>
-            Return to our research.
+            Coming soon.
           </p>
         </div>
         <div
@@ -97,4 +93,4 @@ const NotFound = () => {
   );
 };
 
-export default NotFound;
+export default Newsletter;

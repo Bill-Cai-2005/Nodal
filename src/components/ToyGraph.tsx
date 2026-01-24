@@ -111,7 +111,7 @@ const ToyGraph = () => {
       event.stopPropagation();
     }
     if (node.sectionId === "about") {
-      navigate("/about");
+      navigate("/newsletter");
     } else {
       // All black nodes navigate to blogs page
       navigate("/blogs");
@@ -165,20 +165,29 @@ const ToyGraph = () => {
         <PageHeader />
       </div>
       <div
+        onClick={(e) => e.stopPropagation()}
         style={{
-          position: "absolute",
-          bottom: "60px",
-          left: "50%",
-          transform: "translateX(-50%)",
+          position: "fixed",
+          bottom: "40px",
+          left: 0,
+          right: 0,
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
           zIndex: 10,
-          fontSize: "0.875rem",
-          color: "#666666",
-          fontFamily: "Montserrat, sans-serif",
-          pointerEvents: "none",
         }}
       >
-        Black Nodes lead to Research - Red Node leads to About
-
+        <span
+          style={{
+            fontFamily: "Montserrat, sans-serif",
+            fontSize: "0.875rem",
+            color: "#333333",
+            textDecoration: "none",
+            transition: "opacity 0.2s ease",
+          }}
+        >
+          Nodes are interactive - try clicking or dragging them!
+        </span>
       </div>
       <ForceGraph2D
         key={resetKey}

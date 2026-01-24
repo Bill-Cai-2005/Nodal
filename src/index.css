@@ -58,11 +58,45 @@ button {
   .about-content {
     padding-left: 1rem;
     padding-right: 1rem;
+    text-align: center !important;
   }
 
-  /* Set margin-top to 50px for About and Legal pages on mobile */
+  /* Legal page: keep text left-aligned */
+  .legal-content {
+    text-align: left !important;
+  }
+
+  /* Set margin-top to 20px for About and Legal pages on mobile */
   .about-container .container {
     margin-top: 20px !important;
+  }
+
+  /* Make text smaller on mobile for About section */
+  .about-paragraph {
+    font-size: 0.875rem !important;
+    line-height: 1.5 !important;
+  }
+
+  .about-section-title {
+    font-size: 1.125rem !important;
+  }
+
+  /* Make text smaller on mobile for Legal page */
+  .about-container .about-content p,
+  .about-container .about-content h1,
+  .about-container .about-content h2 {
+    font-size: 0.875rem !important;
+    line-height: 1.5 !important;
+  }
+
+  /* Make newsletter title bigger on mobile - override the general rule */
+  .about-container .about-content .newsletter-title {
+    font-size: 2rem !important;
+  }
+
+  /* Hide founder note section on mobile */
+  .founder-note {
+    display: none !important;
   }
 
   /* Hide ToyGraph on mobile */
@@ -103,11 +137,36 @@ button {
 
   /* Show mobile footer on mobile */
   .mobile-footer {
-    display: block !important;
+    display: flex !important;
+    justify-content: center !important;
+    align-items: center !important;
   }
 }
 
 /* Hide mobile footer on desktop */
 .mobile-footer {
   display: none;
+}
+
+/* Hide mobile marble note on desktop */
+.mobile-marble-note {
+  display: none;
+}
+
+@media (max-width: 768px) {
+
+  /* Show mobile marble note on mobile */
+  .mobile-marble-note {
+    display: block !important;
+  }
+
+  /* Hide desktop footer on mobile */
+  .desktop-footer {
+    display: none !important;
+  }
+}
+
+/* Show desktop footer on desktop */
+.desktop-footer {
+  display: flex;
 }

@@ -42,8 +42,20 @@ app.use(cors({
   allowedHeaders: ["Content-Type", "Authorization"]
 }));
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Body parsing middleware - exclude upload route to allow formidable to handle multipart/form-data
+app.use((req, res, next) => {
+  if (req.path.startsWith("/api/upload-image")) {
+    return next();
+  }
+  express.json()(req, res, next);
+});
+
+app.use((req, res, next) => {
+  if (req.path.startsWith("/api/upload-image")) {
+    return next();
+  }
+  express.urlencoded({ extended: true })(req, res, next);
+});
 
 // Serve static files from public directory
 app.use(express.static("public"));

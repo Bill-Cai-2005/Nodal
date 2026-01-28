@@ -71,6 +71,11 @@ app.get("/health", (_req: express.Request, res: express.Response) => {
   res.json({ status: "ok" });
 });
 
+// 404 handler for API routes - ensure JSON response
+app.use("/api/*", (_req: express.Request, res: express.Response) => {
+  res.status(404).json({ error: "API endpoint not found" });
+});
+
 // Handle Chrome DevTools requests (harmless, can be ignored)
 app.get("/.well-known/appspecific/com.chrome.devtools.json", (_req: express.Request, res: express.Response) => {
   res.status(404).json({});

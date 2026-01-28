@@ -121,7 +121,32 @@ const BlogManagement = () => {
       });
 
       if (!response.ok) {
-        throw new Error("Failed to upload image");
+        const contentType = response.headers.get("content-type");
+        let errorMessage = `Failed to upload image: ${response.status} ${response.statusText}`;
+        
+        // Try to get error message from response
+        if (contentType && contentType.includes("application/json")) {
+          try {
+            const errorData = await response.json();
+            errorMessage = errorData.error || errorMessage;
+          } catch (e) {
+            // Ignore JSON parse errors
+          }
+        } else {
+          // If it's HTML, log it for debugging
+          const text = await response.text();
+          console.error("Non-JSON response received:", text.substring(0, 200));
+          errorMessage = `Server returned HTML instead of JSON. Check API endpoint: ${getApiEndpoint("/api/upload-image")}`;
+        }
+        
+        throw new Error(errorMessage);
+      }
+
+      const contentType = response.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        const text = await response.text();
+        console.error("Non-JSON response:", text.substring(0, 200));
+        throw new Error(`Server returned ${contentType} instead of JSON. Check API endpoint: ${getApiEndpoint("/api/upload-image")}`);
       }
 
       const data = await response.json();

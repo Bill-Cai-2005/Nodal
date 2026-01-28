@@ -162,7 +162,9 @@ const Blogs = () => {
                     {post.authorProfilePicture && (
                       <img
                         src={
-                          post.authorProfilePicture.startsWith("http") || post.authorProfilePicture.startsWith("/")
+                          post.authorProfilePicture.startsWith("data:") || 
+                          post.authorProfilePicture.startsWith("http") || 
+                          post.authorProfilePicture.startsWith("/")
                             ? post.authorProfilePicture
                             : `${getApiUrl()}${post.authorProfilePicture}`
                         }

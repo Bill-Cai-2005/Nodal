@@ -124,7 +124,9 @@ const Blog = () => {
   }
 
   const profilePictureUrl = blog.authorProfilePicture
-    ? blog.authorProfilePicture.startsWith("http") || blog.authorProfilePicture.startsWith("/")
+    ? blog.authorProfilePicture.startsWith("data:") ||
+      blog.authorProfilePicture.startsWith("http") || 
+      blog.authorProfilePicture.startsWith("/")
       ? blog.authorProfilePicture
       : `${getApiUrl()}${blog.authorProfilePicture}`
     : null;

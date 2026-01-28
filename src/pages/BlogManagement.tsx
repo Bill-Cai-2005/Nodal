@@ -329,7 +329,9 @@ const BlogManagement = () => {
           {record.authorProfilePicture && (
             <div>
               <img
-                src={record.authorProfilePicture.startsWith("http") || record.authorProfilePicture.startsWith("/") 
+                src={record.authorProfilePicture.startsWith("data:") ||
+                     record.authorProfilePicture.startsWith("http") || 
+                     record.authorProfilePicture.startsWith("/") 
                   ? record.authorProfilePicture 
                   : `${getApiUrl()}${record.authorProfilePicture}`}
                 alt="Profile"

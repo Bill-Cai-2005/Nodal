@@ -219,8 +219,28 @@ const BlogManagement = () => {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to save blogs");
+        const contentType = response.headers.get("content-type");
+        let errorMessage = `Failed to save blogs: ${response.status} ${response.statusText}`;
+        
+        if (response.status === 413) {
+          errorMessage = "Request too large. Images are too big. Try using smaller images or fewer blogs at once.";
+        } else if (contentType && contentType.includes("application/json")) {
+          try {
+            const errorData = await response.json();
+            errorMessage = errorData.error || errorMessage;
+            if (errorData.details) {
+              errorMessage += ` (${errorData.details})`;
+            }
+          } catch (e) {
+            // Ignore JSON parse errors
+          }
+        } else {
+          const text = await response.text();
+          console.error("Non-JSON response:", text.substring(0, 200));
+          errorMessage = `Server returned ${contentType || "unknown"} instead of JSON`;
+        }
+        
+        throw new Error(errorMessage);
       }
 
       const updatedBlogs = await response.json();
@@ -230,8 +250,8 @@ const BlogManagement = () => {
         id: blog._id || blog.id,
       }));
       setBlogs(normalizedBlogs);
-    setError("");
-    alert("Blogs saved successfully!");
+      setError("");
+      alert("Blogs saved successfully!");
     } catch (err: any) {
       console.error("Error saving blogs:", err);
       setError(err.message || "Failed to save blogs. Make sure the backend server is running.");

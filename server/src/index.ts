@@ -43,18 +43,19 @@ app.use(cors({
 }));
 
 // Body parsing middleware - exclude upload route to allow formidable to handle multipart/form-data
+// Increase limit to 50MB to handle base64 images in blog posts
 app.use((req, res, next) => {
   if (req.path.startsWith("/api/upload-image")) {
     return next();
   }
-  express.json()(req, res, next);
+  express.json({ limit: "50mb" })(req, res, next);
 });
 
 app.use((req, res, next) => {
   if (req.path.startsWith("/api/upload-image")) {
     return next();
   }
-  express.urlencoded({ extended: true })(req, res, next);
+  express.urlencoded({ extended: true, limit: "50mb" })(req, res, next);
 });
 
 // Serve static files from public directory
@@ -69,6 +70,14 @@ app.use("/api/upload-image", uploadImageRouter);
 // Health check
 app.get("/health", (_req: express.Request, res: express.Response) => {
   res.json({ status: "ok" });
+});
+
+// Error handler for payload too large (413) - ensure JSON response
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (err.type === "entity.too.large") {
+    return res.status(413).json({ error: "Request payload too large", details: "Maximum size is 50MB" });
+  }
+  next(err);
 });
 
 // 404 handler for API routes - ensure JSON response

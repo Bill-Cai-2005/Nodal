@@ -20,7 +20,10 @@ const BlogManagement = () => {
   const [error, setError] = useState("");
   const [blogs, setBlogs] = useState<BlogItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>({
+    dragHandle: true,
     title: true,
     date: true,
     authorName: true,
@@ -266,7 +269,89 @@ const BlogManagement = () => {
     setBlogs(updated);
   };
 
+  const handleDragStart = (index: number) => {
+    setDraggedIndex(index);
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    setDragOverIndex(index);
+  };
+
+  const handleDragLeave = () => {
+    setDragOverIndex(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, dropIndex: number) => {
+    e.preventDefault();
+    
+    if (draggedIndex === null || draggedIndex === dropIndex) {
+      setDraggedIndex(null);
+      setDragOverIndex(null);
+      return;
+    }
+
+    const newBlogs = [...blogs];
+    const draggedItem = newBlogs[draggedIndex];
+    
+    // Remove the dragged item
+    newBlogs.splice(draggedIndex, 1);
+    
+    // Insert it at the new position
+    newBlogs.splice(dropIndex, 0, draggedItem);
+    
+    setBlogs(newBlogs);
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  };
+
   const baseColumns = useMemo(() => [
+    {
+      key: "dragHandle",
+      title: "",
+      width: "3%",
+      render: (_: any, _record: BlogItem, index: number) => (
+        <div
+          draggable
+          onDragStart={() => handleDragStart(index)}
+          style={{
+            cursor: "grab",
+            padding: "0.5rem",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            userSelect: "none",
+          }}
+          onMouseDown={(e) => {
+            e.currentTarget.style.cursor = "grabbing";
+          }}
+          onMouseUp={(e) => {
+            e.currentTarget.style.cursor = "grab";
+          }}
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 16 16"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            style={{ opacity: 0.5 }}
+          >
+            <circle cx="4" cy="4" r="1.5" fill="#666666" />
+            <circle cx="12" cy="4" r="1.5" fill="#666666" />
+            <circle cx="4" cy="8" r="1.5" fill="#666666" />
+            <circle cx="12" cy="8" r="1.5" fill="#666666" />
+            <circle cx="4" cy="12" r="1.5" fill="#666666" />
+            <circle cx="12" cy="12" r="1.5" fill="#666666" />
+          </svg>
+        </div>
+      ),
+    },
     {
       key: "title",
       title: "Title",
@@ -897,7 +982,20 @@ const BlogManagement = () => {
                 </tr>
               ) : (
                 blogs.map((blog, index) => (
-                  <tr key={blog._id || blog.id || index} style={{ borderBottom: "1px solid #e2e8f0" }}>
+                  <tr
+                    key={blog._id || blog.id || index}
+                    draggable={false}
+                    onDragOver={(e) => handleDragOver(e, index)}
+                    onDragLeave={handleDragLeave}
+                    onDrop={(e) => handleDrop(e, index)}
+                    onDragEnd={handleDragEnd}
+                    style={{
+                      borderBottom: "1px solid #e2e8f0",
+                      backgroundColor: draggedIndex === index ? "#f0f0f0" : dragOverIndex === index ? "#e8f4f8" : "transparent",
+                      opacity: draggedIndex === index ? 0.5 : 1,
+                      transition: "background-color 0.2s ease, opacity 0.2s ease",
+                    }}
+                  >
                     {visibleColumns.map((column) => (
                       <td
                         key={column.key}

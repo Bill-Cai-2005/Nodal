@@ -7,14 +7,12 @@ const Footer = () => {
     <div
       className="desktop-footer"
       style={{
-        position: "fixed",
-        bottom: "40px",
-        left: 0,
-        right: 0,
+        width: "100%",
         display: "flex",
         justifyContent: "center",
         alignItems: "center",
-        zIndex: 10,
+        padding: "2rem 0",
+        marginTop: "auto",
       }}
     >
       <span

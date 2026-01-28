@@ -1,14 +1,18 @@
 import { useNavigate } from "react-router-dom";
 import PageHeader from "../components/PageHeader";
 import Footer from "../components/Footer";
+import { useResponsivePadding } from "../hooks/useResponsivePadding";
 
 const About = () => {
   const navigate = useNavigate();
+  const responsivePaddingTop = useResponsivePadding();
 
   // Shared styles
   const containerStyle = {
     minHeight: "100vh",
     background: "#f5f5f5",
+    padding: "2rem",
+    paddingTop: responsivePaddingTop, // Responsive padding based on screen height
     display: "flex",
     flexDirection: "column" as const,
     alignItems: "center",
@@ -82,7 +86,7 @@ const About = () => {
             Nodal is an equity research collective.
           </p>
           <p style={paragraphStyle} className="about-paragraph">
-            We commit 1.2 Million of internal capital to our research.
+            We commit 1.2 Million USD of internal capital to our research.
           </p>
           <p style={paragraphStyle} className="about-paragraph mobile-marble-note">
             We were previously {" "}

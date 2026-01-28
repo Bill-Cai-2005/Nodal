@@ -1,13 +1,17 @@
 import { useNavigate } from "react-router-dom";
 import PageHeader from "../components/PageHeader";
 import Footer from "../components/Footer";
+import { useResponsivePadding } from "../hooks/useResponsivePadding";
 
 const Newsletter = () => {
   const navigate = useNavigate();
+  const responsivePaddingTop = useResponsivePadding();
 
   const containerStyle = {
     minHeight: "100vh",
     background: "#f5f5f5",
+    padding: "2rem",
+    paddingTop: responsivePaddingTop, // Responsive padding based on screen height
     display: "flex",
     flexDirection: "column" as const,
     alignItems: "center",

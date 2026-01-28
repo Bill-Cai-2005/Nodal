@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import PageHeader from "../components/PageHeader";
 import Footer from "../components/Footer";
 import { getApiEndpoint, getApiUrl } from "../utils/api";
+import { useResponsivePadding } from "../hooks/useResponsivePadding";
 
 interface BlogItem {
   _id?: string;
@@ -16,6 +17,7 @@ interface BlogItem {
 
 const Blogs = () => {
   const navigate = useNavigate();
+  const responsivePaddingTop = useResponsivePadding();
   const [blogPosts, setBlogPosts] = useState<BlogItem[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -68,7 +70,7 @@ const Blogs = () => {
         minHeight: "100vh",
         background: "#f5f5f5",
         padding: "2rem",
-        paddingTop: "140px", // Space for PageHeader (40px top + ~60px header height + 40px buffer)
+        paddingTop: responsivePaddingTop, // Responsive padding based on screen height
         display: "flex",
         flexDirection: "column",
         alignItems: "center",

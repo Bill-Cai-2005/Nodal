@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown";
 import PageHeader from "../components/PageHeader";
 import Footer from "../components/Footer";
 import { getApiEndpoint, getApiUrl } from "../utils/api";
+import { useResponsivePadding } from "../hooks/useResponsivePadding";
 
 interface BlogItem {
   _id: string;
@@ -17,6 +18,7 @@ interface BlogItem {
 const Blog = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const responsivePaddingTop = useResponsivePadding();
   const [blog, setBlog] = useState<BlogItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -63,7 +65,7 @@ const Blog = () => {
           alignItems: "center",
           justifyContent: "center",
           padding: "2rem",
-          paddingTop: "140px", // Space for PageHeader (40px top + ~60px header height + 40px buffer)
+          paddingTop: responsivePaddingTop, // Responsive padding based on screen height
         }}
       >
         <PageHeader />
@@ -83,7 +85,7 @@ const Blog = () => {
           alignItems: "center",
           justifyContent: "center",
           padding: "2rem",
-          paddingTop: "140px", // Space for PageHeader (40px top + ~60px header height + 40px buffer)
+          paddingTop: responsivePaddingTop, // Responsive padding based on screen height
         }}
       >
         <PageHeader />
@@ -138,10 +140,12 @@ const Blog = () => {
         background: "#f5f5f5",
         padding: "2rem",
         paddingTop: "140px", // Space for PageHeader (40px top + ~60px header height + 40px buffer)
+        display: "flex",
+        flexDirection: "column",
       }}
     >
       <PageHeader />
-      <div style={{ maxWidth: "900px", margin: "0 auto" }}>
+      <div style={{ maxWidth: "900px", margin: "0 auto", flex: 1 }}>
         <div
           onClick={() => navigate("/blogs")}
           style={{

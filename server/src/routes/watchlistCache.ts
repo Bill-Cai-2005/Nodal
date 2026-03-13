@@ -2,8 +2,100 @@ import express, { Request, Response } from "express";
 import connectDB from "../utils/connectDB.js";
 import StartPriceCache from "../models/StartPriceCache.js";
 import MarketCapSnapshot from "../models/MarketCapSnapshot.js";
+import CustomWatchlist from "../models/CustomWatchlist.js";
 
 const router = express.Router();
+
+// GET /api/watchlist-cache/custom-watchlists
+router.get("/custom-watchlists", async (_req: Request, res: Response) => {
+  try {
+    await connectDB();
+    const docs = await CustomWatchlist.find({}).sort({ name: 1 });
+    return res.json({
+      watchlists: docs.map((d: any) => ({
+        name: d.name,
+        tickers: d.tickers || [],
+        data: d.data || [],
+        last_refreshed: d.lastRefreshed || null,
+      })),
+    });
+  } catch (error: any) {
+    console.error("Error loading custom watchlists:", error);
+    return res.status(500).json({ error: error.message || "Failed to load custom watchlists" });
+  }
+});
+
+// PUT /api/watchlist-cache/custom-watchlists/:name
+// Body: { tickers: string[], data?: any[], last_refreshed?: ISO|null }
+router.put("/custom-watchlists/:name", async (req: Request, res: Response) => {
+  try {
+    await connectDB();
+    const name = String(req.params.name || "").trim();
+    const { tickers, data, last_refreshed } = req.body || {};
+
+    if (!name) {
+      return res.status(400).json({ error: "Watchlist name is required" });
+    }
+    if (!Array.isArray(tickers)) {
+      return res.status(400).json({ error: "tickers must be an array" });
+    }
+
+    const normalizedTickers = Array.from(
+      new Set(
+        tickers
+          .map((t: any) => String(t || "").trim().toUpperCase())
+          .filter(Boolean)
+      )
+    );
+    const normalizedData = Array.isArray(data) ? data : [];
+    const parsedLastRefreshed =
+      last_refreshed === null || last_refreshed === undefined
+        ? null
+        : new Date(last_refreshed);
+    const lastRefreshed =
+      parsedLastRefreshed && !Number.isNaN(parsedLastRefreshed.getTime())
+        ? parsedLastRefreshed
+        : null;
+
+    // Overwrite existing watchlist payload so refresh replaces previous rows.
+    const doc = await CustomWatchlist.findOneAndUpdate(
+      { name },
+      {
+        name,
+        tickers: normalizedTickers,
+        data: normalizedData,
+        lastRefreshed,
+      },
+      { upsert: true, new: true }
+    );
+
+    return res.json({
+      name: doc.name,
+      tickers: doc.tickers || [],
+      data: doc.data || [],
+      last_refreshed: doc.lastRefreshed || null,
+    });
+  } catch (error: any) {
+    console.error("Error saving custom watchlist:", error);
+    return res.status(500).json({ error: error.message || "Failed to save custom watchlist" });
+  }
+});
+
+// DELETE /api/watchlist-cache/custom-watchlists/:name
+router.delete("/custom-watchlists/:name", async (req: Request, res: Response) => {
+  try {
+    await connectDB();
+    const name = String(req.params.name || "").trim();
+    if (!name) {
+      return res.status(400).json({ error: "Watchlist name is required" });
+    }
+    await CustomWatchlist.deleteOne({ name });
+    return res.json({ ok: true });
+  } catch (error: any) {
+    console.error("Error deleting custom watchlist:", error);
+    return res.status(500).json({ error: error.message || "Failed to delete custom watchlist" });
+  }
+});
 
 // GET /api/watchlist-cache/start-prices?dateKey=YYYY-MM-DD
 // If dateKey omitted, returns list of available dateKeys.

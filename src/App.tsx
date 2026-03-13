@@ -8,6 +8,7 @@ import Blogs from "./pages/Blogs";
 import About from "./pages/About";
 import Legal from "./pages/Legal";
 import NodalWatchlist from "./pages/NodalWatchlist";
+import Newsletter from "./pages/Newsletter";
 import NotFound from "./pages/NotFound";
 
 function App() {
@@ -27,7 +28,8 @@ function App() {
         />
         <Route path="/about" element={<About />} />
         <Route path="/legal" element={<Legal />} />
-        <Route path="/newsletter" element={<NodalWatchlist />} />
+        <Route path="/newsletter" element={<Newsletter />} />
+        <Route path="/tools" element={<NodalWatchlist />} />
         <Route path="/blogs" element={<Blogs />} />
         <Route path="/blogManagement" element={<BlogManagement />} />
         <Route path="/BlogManagement" element={<BlogManagement />} />

@@ -1,15 +1,45 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import PageHeader from "../components/PageHeader";
 import Footer from "../components/Footer";
 import { useResponsivePadding } from "../hooks/useResponsivePadding";
 import UniversalWatchlist from "../components/NodalWatchlist/UniversalWatchlist";
 import CustomWatchlists from "../components/NodalWatchlist/CustomWatchlists";
+import { verifyToolPassword } from "../utils/adminApi";
 
+const REQUIRE_ADMIN_PASSCODE = true;
 const NodalWatchlist = () => {
   const navigate = useNavigate();
   const responsivePaddingTop = useResponsivePadding();
-  const [activeTab, setActiveTab] = useState<"universal" | "custom">("universal");
+  const [isAdmin, setIsAdmin] = useState<boolean>(!REQUIRE_ADMIN_PASSCODE);
+  const [adminPassword, setAdminPassword] = useState("");
+  const [activeTab, setActiveTab] = useState<"universal" | "custom">("custom");
+  const hasAccess = !REQUIRE_ADMIN_PASSCODE || isAdmin;
+
+  useEffect(() => {
+    if (!hasAccess) {
+      setActiveTab("custom");
+    }
+  }, [hasAccess]);
+
+  const handleUnlock = async () => {
+    if (!adminPassword.trim()) {
+      alert("Please enter a password");
+      return;
+    }
+
+    try {
+      const result = await verifyToolPassword(adminPassword.trim());
+      if (!result.ok) {
+        alert(result.error || "Incorrect password");
+        return;
+      }
+      setIsAdmin(true);
+      setAdminPassword("");
+    } catch (e: any) {
+      alert(e?.message || "Failed to validate password");
+    }
+  };
 
   const containerStyle = {
     minHeight: "100vh",
@@ -41,11 +71,11 @@ const NodalWatchlist = () => {
     transition: "all 0.2s ease",
   };
 
-  const activeTabStyle = {
+  const getTabStyle = (tab: "universal" | "custom") => ({
     ...tabStyle,
-    color: "#000000",
-    borderBottomColor: "#000000",
-  };
+    color: activeTab === tab ? "#000000" : "#666666",
+    borderBottom: activeTab === tab ? "2px solid #000000" : "2px solid transparent",
+  });
 
   const nodeStyle = {
     width: "32px",
@@ -72,25 +102,97 @@ const NodalWatchlist = () => {
             textAlign: "center",
           }}
         >
-          Nodal Watchlist Tool
+          Nodal Watchlist Tools
         </h1>
 
-        <div style={{ display: "flex", gap: "1rem", marginBottom: "2rem", justifyContent: "center" }}>
-          <button
-            onClick={() => setActiveTab("universal")}
-            style={activeTab === "universal" ? activeTabStyle : tabStyle}
+        {REQUIRE_ADMIN_PASSCODE && !hasAccess && (
+          <div
+            style={{
+              marginBottom: "1.5rem",
+              padding: "1rem 1.25rem",
+              borderRadius: "8px",
+              backgroundColor: "#ffffff",
+              border: "1px solid #e5e7eb",
+              maxWidth: "420px",
+              marginInline: "auto",
+            }}
           >
-            Universal Watchlist
-          </button>
-          <button
-            onClick={() => setActiveTab("custom")}
-            style={activeTab === "custom" ? activeTabStyle : tabStyle}
-          >
-            Custom Watchlists
-          </button>
-        </div>
+            <h2
+              style={{
+                fontFamily: "Montserrat, sans-serif",
+                fontSize: "1rem",
+                fontWeight: 600,
+                marginBottom: "0.75rem",
+              }}
+            >
+              Admin Tools
+            </h2>
+            <div style={{ display: "flex", gap: "0.75rem" }}>
+              <input
+                type="password"
+                value={adminPassword}
+                onChange={(e) => setAdminPassword(e.target.value)}
+                placeholder="Enter admin password"
+                style={{
+                  flex: 1,
+                  padding: "0.5rem 0.75rem",
+                  borderRadius: "4px",
+                  border: "1px solid #d1d5db",
+                  fontSize: "0.875rem",
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    handleUnlock();
+                  }
+                }}
+              />
+              <button
+                type="button"
+                onClick={handleUnlock}
+                style={{
+                  padding: "0.5rem 1rem",
+                  backgroundColor: "#000000",
+                  color: "#ffffff",
+                  borderRadius: "6px",
+                  border: "none",
+                  cursor: "pointer",
+                  fontSize: "0.875rem",
+                  fontWeight: 600,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                Unlock
+              </button>
+            </div>
+          </div>
+        )}
 
-        {activeTab === "universal" ? <UniversalWatchlist /> : <CustomWatchlists />}
+        {hasAccess && (
+          <>
+            <div style={{ display: "flex", gap: "1rem", marginBottom: "2rem", justifyContent: "center" }}>
+              <button
+                onClick={() => setActiveTab("universal")}
+                style={getTabStyle("universal")}
+              >
+                Universal Watchlist
+              </button>
+              <button
+                onClick={() => setActiveTab("custom")}
+                style={getTabStyle("custom")}
+              >
+                Custom Watchlists
+              </button>
+            </div>
+
+            {activeTab === "universal" ? <UniversalWatchlist /> : <CustomWatchlists />}
+          </>
+        )}
+
+        {REQUIRE_ADMIN_PASSCODE && !hasAccess && (
+          <div style={{ textAlign: "center", color: "#666666", marginBottom: "1.5rem" }}>
+            Enter the admin password to access tools.
+          </div>
+        )}
 
         <div
           onClick={() => navigate("/")}

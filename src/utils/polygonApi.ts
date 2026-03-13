@@ -14,7 +14,7 @@ export interface StockData {
   "Current Price": number | null;
   "Market Cap": number | null;
   "Daily Stock Change %": number | null;
-  "Change Since Start %": number | null;
+  "Custom Dates Change %": number | null;
   Volume: number | null;
   Industry: string | null;
   Error: string | null;
@@ -110,19 +110,6 @@ const isIndividualCompanyResult = (row: any): boolean => {
   return !blockedTokens.some((token) => name.includes(token));
 };
 
-export const getMarketStatus = (): boolean => {
-  const now = new Date();
-  const nyTime = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" }));
-  if (nyTime.getDay() === 0 || nyTime.getDay() === 6) return false;
-
-  const marketOpen = new Date(nyTime);
-  marketOpen.setHours(9, 30, 0, 0);
-  const marketClose = new Date(nyTime);
-  marketClose.setHours(16, 0, 0, 0);
-
-  return nyTime >= marketOpen && nyTime <= marketClose;
-};
-
 export const fetchTickerReference = async (ticker: string, signal?: AbortSignal): Promise<TickerReference | null> => {
   try {
     const data = await polygonGet(`/v3/reference/tickers/${ticker}`, undefined, 20, 4, signal);
@@ -173,26 +160,6 @@ export const fetchStockData = async (
     let volume: number | null = null;
     const useCustomRange = customStartDate && customEndDate;
 
-    // Market open: use snapshot
-    if (!useCustomRange && getMarketStatus()) {
-      try {
-        const snap = await polygonGet(`/v2/snapshot/locale/us/markets/stocks/tickers/${ticker}`);
-        const tickerSnap = snap?.ticker || {};
-        const prevDay = tickerSnap.prevDay || {};
-        const lastTrade = tickerSnap.lastTrade || {};
-        const day = tickerSnap.day || {};
-
-        const prevClose = safeFloat(prevDay.c);
-        currentPrice = safeFloat(lastTrade.p) || safeFloat(day.c);
-        volume = safeFloat(day.v);
-
-        if (prevClose && prevClose !== 0 && currentPrice !== null) {
-          changePct = ((currentPrice - prevClose) / prevClose) * 100;
-        }
-        startingPrice = prevClose;
-      } catch { }
-    }
-
     // Custom range path
     if (useCustomRange && customStartDate && customEndDate) {
       const dateKey = toIso(customStartDate);
@@ -235,8 +202,7 @@ export const fetchStockData = async (
       if (startingPrice && startingPrice !== 0 && currentPrice !== null) {
         changePct = ((currentPrice - startingPrice) / startingPrice) * 100;
       }
-    } else if (changePct === null) {
-      // Fallback: fetch last 7 days
+    } else {
       const fromDate = new Date();
       fromDate.setDate(fromDate.getDate() - 7);
       const aggs = await polygonGet(
@@ -244,9 +210,11 @@ export const fetchStockData = async (
         { adjusted: "true", sort: "asc", limit: 5000 }
       );
       const rows = aggs?.results || [];
-      if (rows.length >= 2) {
-        const prevClose = safeFloat(rows[rows.length - 2].c);
+      if (rows.length >= 1) {
         const lastClose = safeFloat(rows[rows.length - 1].c);
+        const prevClose = rows.length >= 2
+          ? safeFloat(rows[rows.length - 2].c)
+          : safeFloat(rows[rows.length - 1].o);
         if (prevClose && prevClose !== 0 && lastClose !== null) {
           changePct = ((lastClose - prevClose) / prevClose) * 100;
         }
@@ -262,7 +230,7 @@ export const fetchStockData = async (
       "Current Price": currentPrice,
       "Market Cap": marketCap,
       "Daily Stock Change %": changePct,
-      "Change Since Start %": useCustomRange ? changePct : null,
+      "Custom Dates Change %": useCustomRange ? changePct : null,
       Volume: volume,
       Industry: industry,
       Error: null,
@@ -274,36 +242,12 @@ export const fetchStockData = async (
       "Current Price": null,
       "Market Cap": null,
       "Daily Stock Change %": null,
-      "Change Since Start %": null,
+      "Custom Dates Change %": null,
       Volume: null,
       Industry: null,
       Error: err.message || "Unknown error",
     };
   }
-};
-
-export const fetchSnapshotBatch = async (tickers: string[]): Promise<Record<string, any>> => {
-  const chunks: string[][] = [];
-  for (let i = 0; i < tickers.length; i += SNAPSHOT_BATCH_SIZE) {
-    chunks.push(tickers.slice(i, i + SNAPSHOT_BATCH_SIZE));
-  }
-
-  const results: Record<string, any> = {};
-  for (const chunk of chunks) {
-    try {
-      const data = await polygonGet("/v2/snapshot/locale/us/markets/stocks/tickers", {
-        tickers: chunk.join(","),
-      });
-      const byTicker: Record<string, any> = {};
-      (data?.tickers || []).forEach((t: any) => {
-        byTicker[String(t.ticker).toUpperCase()] = t;
-      });
-      Object.assign(results, byTicker);
-    } catch (err) {
-      console.error("Snapshot batch failed:", err);
-    }
-  }
-  return results;
 };
 
 export const fetchNyseNasdaqTickers = async (
@@ -367,6 +311,28 @@ export const fetchNyseNasdaqTickers = async (
     nyse: Array.from(new Set(nyseTickers)).sort(),
     nasdaq: Array.from(new Set(nasdaqTickers)).sort(),
   };
+};
+
+export const fetchSnapshotBatch = async (tickers: string[]): Promise<Record<string, any>> => {
+  const chunks: string[][] = [];
+  for (let i = 0; i < tickers.length; i += SNAPSHOT_BATCH_SIZE) {
+    chunks.push(tickers.slice(i, i + SNAPSHOT_BATCH_SIZE));
+  }
+
+  const results: Record<string, any> = {};
+  for (const chunk of chunks) {
+    try {
+      const data = await polygonGet("/v2/snapshot/locale/us/markets/stocks/tickers", {
+        tickers: chunk.join(","),
+      });
+      for (const t of data?.tickers || []) {
+        results[String(t.ticker).toUpperCase()] = t;
+      }
+    } catch (err) {
+      console.error("Snapshot batch failed:", err);
+    }
+  }
+  return results;
 };
 
 export const fetchHistoricalOpenPrice = async (

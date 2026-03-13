@@ -1,70 +1,114 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
-  fetchSnapshotBatch,
-  fetchTickerReference,
+  fetchStockData,
   validateTicker,
   type StockData,
 } from "../../utils/polygonApi";
 import {
   loadWatchlists,
   saveWatchlists,
-  loadStartPriceCache,
-  loadTickerRefCache,
-  saveTickerRefCache,
   type WatchlistCache,
 } from "../../utils/watchlistCache";
+import {
+  deleteCustomWatchlistFromDb,
+  loadCustomWatchlistsFromDb,
+  saveCustomWatchlistToDb,
+} from "../../utils/watchlistCacheApi";
+import CustomWatchlistsTable from "./CustomWatchlistsTable";
 
 const CustomWatchlists = () => {
   const [watchlists, setWatchlists] = useState<WatchlistCache>({});
-  const [selectedWatchlist, setSelectedWatchlist] = useState<string>("");
   const [newWatchlistName, setNewWatchlistName] = useState("");
-  const [newTicker, setNewTicker] = useState("");
+  const [showCreateControls, setShowCreateControls] = useState(false);
+  const [newTickerByWatchlist, setNewTickerByWatchlist] = useState<Record<string, string>>({});
   const [watchlistData, setWatchlistData] = useState<Record<string, StockData[]>>({});
-  const [loading, setLoading] = useState(false);
+  const [loadingAll, setLoadingAll] = useState(false);
+  const [validatingWatchlist, setValidatingWatchlist] = useState<string | null>(null);
   const [progress, setProgress] = useState({ current: 0, total: 0, message: "" });
+  const [expandedByWatchlist, setExpandedByWatchlist] = useState<Record<string, boolean>>({});
+  const [editModeByWatchlist, setEditModeByWatchlist] = useState<Record<string, boolean>>({});
   const [useCustomRange, setUseCustomRange] = useState(false);
   const [customStart, setCustomStart] = useState<Date>(new Date());
   const [customEnd, setCustomEnd] = useState<Date>(new Date());
-  const [sortColumn, setSortColumn] = useState<string>("");
-  const [sortAscending, setSortAscending] = useState(true);
+  const [sortColumnByWatchlist, setSortColumnByWatchlist] = useState<Record<string, string>>({});
+  const [sortAscendingByWatchlist, setSortAscendingByWatchlist] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    const loaded = loadWatchlists();
-    setWatchlists(loaded);
-    if (Object.keys(loaded).length > 0) {
-      setSelectedWatchlist(Object.keys(loaded)[0]);
-    }
+    (async () => {
+      try {
+        const resp = await loadCustomWatchlistsFromDb();
+        const dbWatchlists = resp.watchlists || [];
+        if (dbWatchlists.length > 0) {
+          const watchlistsMap: WatchlistCache = {};
+          const watchlistDataMap: Record<string, StockData[]> = {};
+          for (const w of dbWatchlists) {
+            watchlistsMap[w.name] = w.tickers || [];
+            watchlistDataMap[w.name] = (w.data || []) as StockData[];
+          }
+          setWatchlists(watchlistsMap);
+          setWatchlistData(watchlistDataMap);
+          saveWatchlists(watchlistsMap);
+          return;
+        }
+      } catch (e) {
+        console.warn("Failed to load custom watchlists from DB, falling back to local cache:", e);
+      }
+
+      const loaded = loadWatchlists();
+      setWatchlists(loaded);
+    })();
   }, []);
 
-  const handleCreateWatchlist = () => {
-    if (!newWatchlistName.trim()) {
+  useEffect(() => {
+    if (useCustomRange) return;
+    setSortColumnByWatchlist((prev) => {
+      const next: Record<string, string> = {};
+      for (const [name, col] of Object.entries(prev)) {
+        next[name] = col === "Custom Dates Change %" ? "" : col;
+      }
+      return next;
+    });
+  }, [useCustomRange]);
+
+  const handleCreateWatchlist = async () => {
+    const name = newWatchlistName.trim();
+    if (!name) {
       alert("Please enter a watchlist name");
       return;
     }
-    if (watchlists[newWatchlistName]) {
+    if (watchlists[name]) {
       alert("Watchlist already exists");
       return;
     }
-    const updated = { ...watchlists, [newWatchlistName]: [] };
+    const updated = { ...watchlists, [name]: [] };
     setWatchlists(updated);
     saveWatchlists(updated);
-    setSelectedWatchlist(newWatchlistName);
+    setExpandedByWatchlist((prev) => ({ ...prev, [name]: true }));
+    setEditModeByWatchlist((prev) => ({ ...prev, [name]: true }));
+    setSortAscendingByWatchlist((prev) => ({ ...prev, [name]: true }));
     setNewWatchlistName("");
+    setShowCreateControls(false);
+    try {
+      await saveCustomWatchlistToDb(name, [], [], null);
+    } catch (e: any) {
+      alert(`Created locally but failed to save watchlist to DB: ${e.message}`);
+    }
   };
 
-  const handleAddTicker = async () => {
-    if (!selectedWatchlist || !newTicker.trim()) {
-      alert("Please select a watchlist and enter a ticker");
+  const handleAddTicker = async (watchlistName: string) => {
+    const inputTicker = (newTickerByWatchlist[watchlistName] || "").trim();
+    if (!inputTicker) {
+      alert("Please enter a ticker");
       return;
     }
-    const ticker = newTicker.trim().toUpperCase();
-    if (watchlists[selectedWatchlist].includes(ticker)) {
+    const ticker = inputTicker.toUpperCase();
+    if ((watchlists[watchlistName] || []).includes(ticker)) {
       alert(`${ticker} already in watchlist`);
       return;
     }
 
     try {
-      setLoading(true);
+      setValidatingWatchlist(watchlistName);
       setProgress({ current: 0, total: 0, message: `Validating ${ticker}...` });
       const validation = await validateTicker(ticker);
       if (!validation.valid) {
@@ -73,172 +117,145 @@ const CustomWatchlists = () => {
       }
       const updated = {
         ...watchlists,
-        [selectedWatchlist]: [...watchlists[selectedWatchlist], ticker],
+        [watchlistName]: [...(watchlists[watchlistName] || []), ticker],
       };
       setWatchlists(updated);
       saveWatchlists(updated);
-      setNewTicker("");
+      setNewTickerByWatchlist((prev) => ({ ...prev, [watchlistName]: "" }));
+      try {
+        await saveCustomWatchlistToDb(
+          watchlistName,
+          updated[watchlistName] || [],
+          watchlistData[watchlistName] || [],
+          null
+        );
+      } catch (e: any) {
+        alert(`Added locally but failed to sync DB: ${e.message}`);
+      }
     } catch (err: any) {
       alert(`Error: ${err.message}`);
     } finally {
-      setLoading(false);
+      setValidatingWatchlist(null);
     }
   };
 
-  const handleRemoveTicker = (ticker: string) => {
-    if (!selectedWatchlist) return;
+  const handleRemoveTicker = async (watchlistName: string, ticker: string) => {
     const updated = {
       ...watchlists,
-      [selectedWatchlist]: watchlists[selectedWatchlist].filter((t) => t !== ticker),
+      [watchlistName]: (watchlists[watchlistName] || []).filter((t) => t !== ticker),
     };
     setWatchlists(updated);
     saveWatchlists(updated);
+    try {
+      await saveCustomWatchlistToDb(
+        watchlistName,
+        updated[watchlistName] || [],
+        watchlistData[watchlistName] || [],
+        null
+      );
+    } catch (e: any) {
+      alert(`Removed locally but failed to sync DB: ${e.message}`);
+    }
   };
 
-  const handleDeleteWatchlist = () => {
-    if (!selectedWatchlist) return;
-    if (!confirm(`Delete watchlist "${selectedWatchlist}"?`)) return;
+  const handleDeleteWatchlist = async (watchlistName: string) => {
+    if (!confirm(`Delete watchlist "${watchlistName}"?`)) return;
     const updated = { ...watchlists };
-    delete updated[selectedWatchlist];
+    delete updated[watchlistName];
     setWatchlists(updated);
     saveWatchlists(updated);
-    delete watchlistData[selectedWatchlist];
-    setWatchlistData({ ...watchlistData });
-    if (Object.keys(updated).length > 0) {
-      setSelectedWatchlist(Object.keys(updated)[0]);
-    } else {
-      setSelectedWatchlist("");
+    setWatchlistData((prev) => {
+      const next = { ...prev };
+      delete next[watchlistName];
+      return next;
+    });
+    setExpandedByWatchlist((prev) => {
+      const next = { ...prev };
+      delete next[watchlistName];
+      return next;
+    });
+    setEditModeByWatchlist((prev) => {
+      const next = { ...prev };
+      delete next[watchlistName];
+      return next;
+    });
+    setSortColumnByWatchlist((prev) => {
+      const next = { ...prev };
+      delete next[watchlistName];
+      return next;
+    });
+    setSortAscendingByWatchlist((prev) => {
+      const next = { ...prev };
+      delete next[watchlistName];
+      return next;
+    });
+    setNewTickerByWatchlist((prev) => {
+      const next = { ...prev };
+      delete next[watchlistName];
+      return next;
+    });
+    try {
+      await deleteCustomWatchlistFromDb(watchlistName);
+    } catch (e: any) {
+      alert(`Deleted locally but failed to delete in DB: ${e.message}`);
     }
   };
 
-  const handleRefreshWatchlist = async () => {
-    if (!selectedWatchlist || watchlists[selectedWatchlist].length === 0) {
-      alert("Watchlist is empty");
+  const handleRefreshAllWatchlists = async () => {
+    const watchlistNames = Object.keys(watchlists);
+    const totalTickers = watchlistNames.reduce((acc, name) => acc + (watchlists[name]?.length || 0), 0);
+    if (totalTickers === 0) {
+      alert("No tickers available to refresh.");
       return;
     }
 
     try {
-      setLoading(true);
-      const tickers = watchlists[selectedWatchlist];
-      setProgress({ current: 0, total: tickers.length, message: "Fetching data..." });
+      setLoadingAll(true);
+      setProgress({ current: 0, total: totalTickers, message: "Fetching full data..." });
 
-      const refCache = loadTickerRefCache();
-      const startPriceCache = useCustomRange ? loadStartPriceCache() : null;
-      const dateKey = useCustomRange ? customStart.toISOString().split("T")[0] : null;
+      let completed = 0;
+      const nextData: Record<string, StockData[]> = { ...watchlistData };
 
-      const snapshots = await fetchSnapshotBatch(tickers);
-      const results: StockData[] = [];
+      for (const watchlistName of watchlistNames) {
+        const tickers = watchlists[watchlistName] || [];
+        const results: StockData[] = [];
 
-      for (let i = 0; i < tickers.length; i++) {
-        const ticker = tickers[i];
-        setProgress({
-          current: i + 1,
-          total: tickers.length,
-          message: `Processing ${ticker}...`,
-        });
-
-        const snap = snapshots[ticker];
-        if (!snap) {
-          results.push({
-            Ticker: ticker,
-            "Starting Price": null,
-            "Current Price": null,
-            "Market Cap": refCache[ticker]?.market_cap || null,
-            "Daily Stock Change %": null,
-            "Change Since Start %": null,
-            Volume: null,
-            Industry: refCache[ticker]?.industry || null,
-            Error: "Missing snapshot",
+        for (const ticker of tickers) {
+          completed += 1;
+          setProgress({
+            current: completed,
+            total: totalTickers,
+            message: `Processing ${watchlistName}: ${ticker}...`,
           });
-          continue;
+
+          results.push(
+            await fetchStockData(
+              ticker,
+              useCustomRange ? customStart : undefined,
+              useCustomRange ? customEnd : undefined
+            )
+          );
         }
 
-        const day = snap.day || {};
-        const prevDay = snap.prevDay || {};
-        const lastTrade = snap.lastTrade || {};
-        const prevClose = prevDay.c ? parseFloat(prevDay.c) : null;
-        const currentPrice = lastTrade.p ? parseFloat(lastTrade.p) : day.c ? parseFloat(day.c) : null;
-        const volume = day.v ? parseFloat(day.v) : null;
-
-        let changePct: number | null = null;
-        if (prevClose && prevClose !== 0 && currentPrice !== null) {
-          changePct = ((currentPrice - prevClose) / prevClose) * 100;
-        }
-
-        let startingPrice = prevClose;
-        let changeSinceStart: number | null = null;
-
-        if (useCustomRange && dateKey && startPriceCache?.[dateKey]?.prices) {
-          const cachedStart = startPriceCache[dateKey].prices[ticker];
-          if (cachedStart !== undefined) {
-            startingPrice = cachedStart;
-            if (currentPrice !== null && cachedStart !== 0) {
-              changeSinceStart = ((currentPrice - cachedStart) / cachedStart) * 100;
-            }
-          }
-        }
-
-        results.push({
-          Ticker: ticker,
-          "Starting Price": startingPrice,
-          "Current Price": currentPrice,
-          "Market Cap": refCache[ticker]?.market_cap || null,
-          "Daily Stock Change %": changePct,
-          "Change Since Start %": changeSinceStart,
-          Volume: volume,
-          Industry: refCache[ticker]?.industry || null,
-          Error: null,
-        });
-      }
-
-      setWatchlistData({ ...watchlistData, [selectedWatchlist]: results });
-      setProgress({ current: 0, total: 0, message: "✅ Refresh complete!" });
-    } catch (err: any) {
-      alert(`Error: ${err.message}`);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleCalculateMarketCap = async () => {
-    if (!selectedWatchlist || !watchlistData[selectedWatchlist]) {
-      alert("No data available");
-      return;
-    }
-
-    try {
-      setLoading(true);
-      const refCache = loadTickerRefCache();
-      const data = watchlistData[selectedWatchlist];
-      const tickersToFetch = data.map((d) => d.Ticker).filter((t) => !refCache[t]?.market_cap);
-
-      for (let i = 0; i < tickersToFetch.length; i++) {
-        const ticker = tickersToFetch[i];
-        setProgress({
-          current: i + 1,
-          total: tickersToFetch.length,
-          message: `Fetching ${ticker}...`,
-        });
-        const ref = await fetchTickerReference(ticker);
-        if (ref) {
-          refCache[ticker] = ref;
+        nextData[watchlistName] = results;
+        try {
+          await saveCustomWatchlistToDb(
+            watchlistName,
+            watchlists[watchlistName] || [],
+            results,
+            new Date().toISOString()
+          );
+        } catch (e: any) {
+          alert(`Refreshed locally for "${watchlistName}" but failed to save refreshed data to DB: ${e.message}`);
         }
       }
 
-      saveTickerRefCache(refCache);
-
-      const updatedData = data.map((row) => ({
-        ...row,
-        "Market Cap": refCache[row.Ticker]?.market_cap || row["Market Cap"],
-        Industry: refCache[row.Ticker]?.industry || row.Industry,
-      }));
-
-      setWatchlistData({ ...watchlistData, [selectedWatchlist]: updatedData });
-      setProgress({ current: 0, total: 0, message: "✅ Market cap calculation complete!" });
+      setWatchlistData(nextData);
+      setProgress({ current: 0, total: 0, message: "Refresh complete." });
     } catch (err: any) {
       alert(`Error: ${err.message}`);
     } finally {
-      setLoading(false);
+      setLoadingAll(false);
     }
   };
 
@@ -251,379 +268,345 @@ const CustomWatchlists = () => {
     return String(value);
   };
 
-  const currentData = selectedWatchlist ? watchlistData[selectedWatchlist] || [] : [];
-  const sortedData = [...currentData].sort((a, b) => {
-    if (!sortColumn) return 0;
-    const aVal = (a as any)[sortColumn];
-    const bVal = (b as any)[sortColumn];
-    if (aVal === null || aVal === undefined) return 1;
-    if (bVal === null || bVal === undefined) return -1;
-    const comparison = aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
-    return sortAscending ? comparison : -comparison;
-  });
+  const watchlistNames = Object.keys(watchlists);
 
   return (
     <div style={{ width: "100%" }}>
-      <div style={{ marginBottom: "2rem" }}>
-        <h2 style={{ fontFamily: "Montserrat, sans-serif", fontSize: "1.5rem", marginBottom: "1rem" }}>
-          Create New Watchlist
-        </h2>
-        <div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
-          <input
-            type="text"
-            value={newWatchlistName}
-            onChange={(e) => setNewWatchlistName(e.target.value)}
-            placeholder="Watchlist Name"
-            style={{ padding: "0.75rem", borderRadius: "4px", border: "1px solid #ccc", flex: 1, maxWidth: "300px" }}
-            onKeyPress={(e) => {
-              if (e.key === "Enter") handleCreateWatchlist();
-            }}
-          />
+      <div style={{ marginBottom: "1rem" }}>
+        <div style={{ display: "flex", gap: "1rem", justifyContent: "center", flexWrap: "wrap", marginBottom: "1rem" }}>
           <button
-            onClick={handleCreateWatchlist}
+            type="button"
+            onClick={handleRefreshAllWatchlists}
+            disabled={loadingAll || Boolean(validatingWatchlist)}
             style={{
               padding: "0.75rem 1.5rem",
               backgroundColor: "#000000",
               color: "#ffffff",
               border: "none",
               borderRadius: "6px",
-              cursor: "pointer",
+              cursor: loadingAll || validatingWatchlist ? "not-allowed" : "pointer",
               fontSize: "0.875rem",
               fontWeight: 600,
+              opacity: loadingAll || validatingWatchlist ? 0.6 : 1,
             }}
           >
-            Create Watchlist
+            {loadingAll ? "Refreshing..." : "Refresh All Watchlists"}
           </button>
+        </div>
+
+        <div style={{ display: "flex", gap: "1rem", alignItems: "center", justifyContent: "center", flexWrap: "wrap", marginBottom: "1rem" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <input
+              type="checkbox"
+              checked={useCustomRange}
+              onChange={(e) => setUseCustomRange(e.target.checked)}
+            />
+            Use Custom Time Range
+          </label>
+          {useCustomRange && (
+            <>
+              <input
+                type="date"
+                value={customStart.toISOString().split("T")[0]}
+                onChange={(e) => setCustomStart(new Date(e.target.value))}
+                style={{ padding: "0.5rem", borderRadius: "4px", border: "1px solid #ccc" }}
+              />
+              <input
+                type="date"
+                value={customEnd.toISOString().split("T")[0]}
+                onChange={(e) => setCustomEnd(new Date(e.target.value))}
+                style={{ padding: "0.5rem", borderRadius: "4px", border: "1px solid #ccc" }}
+              />
+            </>
+          )}
         </div>
       </div>
 
-      {Object.keys(watchlists).length > 0 && (
-        <>
-          <div style={{ marginBottom: "2rem" }}>
-            <h2 style={{ fontFamily: "Montserrat, sans-serif", fontSize: "1.5rem", marginBottom: "1rem" }}>
-              Select Watchlist
-            </h2>
-            <select
-              value={selectedWatchlist}
-              onChange={(e) => setSelectedWatchlist(e.target.value)}
+      {progress.message && (
+        <div style={{ marginBottom: "1rem", padding: "0.75rem", background: "#f0f0f0", borderRadius: "4px" }}>
+          {progress.message}
+          {progress.total > 0 && ` (${progress.current}/${progress.total})`}
+        </div>
+      )}
+
+      {watchlistNames.length === 0 && (
+        <div style={{ padding: "2rem", textAlign: "center", color: "#666666" }}>
+          No watchlists created yet.
+        </div>
+      )}
+
+      {watchlistNames.map((watchlistName) => {
+        const isExpanded = expandedByWatchlist[watchlistName] ?? true;
+        const isEditing = editModeByWatchlist[watchlistName] ?? false;
+        const isBusy = loadingAll || validatingWatchlist === watchlistName;
+        const tickers = watchlists[watchlistName] || [];
+        const currentData = watchlistData[watchlistName] || [];
+
+        return (
+          <div
+            key={watchlistName}
+            style={{
+              marginBottom: "2rem",
+              border: "1px solid #e2e8f0",
+              borderRadius: "8px",
+              padding: "1rem",
+              backgroundColor: "#ffffff",
+            }}
+          >
+            <div
               style={{
-                padding: "0.75rem",
-                borderRadius: "4px",
-                border: "1px solid #ccc",
-                fontSize: "1rem",
-                minWidth: "200px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: isExpanded ? "1rem" : 0,
+                gap: "0.75rem",
+                flexWrap: "wrap",
               }}
             >
-              {Object.keys(watchlists).map((name) => (
-                <option key={name} value={name}>
-                  {name} ({watchlists[name].length} tickers)
-                </option>
-              ))}
-            </select>
-          </div>
+              <div>
+                <h2 style={{ fontFamily: "Montserrat, sans-serif", fontSize: "1.2rem", marginBottom: "0.25rem" }}>
+                  {watchlistName}
+                </h2>
+                <span style={{ fontSize: "0.85rem", color: "#666666" }}>{tickers.length} tickers</span>
+              </div>
 
-          {selectedWatchlist && (
-            <>
-              <div style={{ marginBottom: "2rem" }}>
-                <h3 style={{ fontFamily: "Montserrat, sans-serif", fontSize: "1.25rem", marginBottom: "1rem" }}>
-                  Manage {selectedWatchlist}
-                </h3>
-                <div style={{ display: "flex", gap: "1rem", marginBottom: "1rem", flexWrap: "wrap" }}>
-                  <input
-                    type="text"
-                    value={newTicker}
-                    onChange={(e) => setNewTicker(e.target.value.toUpperCase())}
-                    placeholder="Add Ticker"
-                    style={{ padding: "0.75rem", borderRadius: "4px", border: "1px solid #ccc", width: "150px" }}
-                    onKeyPress={(e) => {
-                      if (e.key === "Enter") handleAddTicker();
-                    }}
-                  />
-                  <button
-                    onClick={handleAddTicker}
-                    disabled={loading}
+              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setExpandedByWatchlist((prev) => ({ ...prev, [watchlistName]: !isExpanded }))
+                  }
+                  style={{
+                    padding: "0.5rem 1rem",
+                    backgroundColor: "#000000",
+                    color: "#ffffff",
+                    border: "none",
+                    borderRadius: "6px",
+                    cursor: "pointer",
+                    fontSize: "0.85rem",
+                    fontWeight: 600,
+                  }}
+                >
+                  {isExpanded ? "Fold" : "Unfold"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setEditModeByWatchlist((prev) => ({ ...prev, [watchlistName]: !isEditing }))
+                  }
+                  style={{
+                    padding: "0.5rem 1rem",
+                    backgroundColor: "#000000",
+                    color: "#ffffff",
+                    border: "none",
+                    borderRadius: "6px",
+                    cursor: "pointer",
+                    fontSize: "0.85rem",
+                    fontWeight: 600,
+                  }}
+                >
+                  {isEditing ? "Done Editing" : "Edit"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleDeleteWatchlist(watchlistName)}
+                  disabled={isBusy}
+                  style={{
+                    padding: "0.5rem 1rem",
+                    backgroundColor: "#8B0000",
+                    color: "#ffffff",
+                    border: "none",
+                    borderRadius: "6px",
+                    cursor: isBusy ? "not-allowed" : "pointer",
+                    fontSize: "0.85rem",
+                    fontWeight: 600,
+                    opacity: isBusy ? 0.6 : 1,
+                  }}
+                >
+                  Delete Watchlist
+                </button>
+              </div>
+            </div>
+
+            {isExpanded && (
+              <>
+                {isEditing && (
+                  <div
                     style={{
-                      padding: "0.75rem 1.5rem",
-                      backgroundColor: "#000000",
-                      color: "#ffffff",
-                      border: "none",
+                      marginBottom: "1rem",
+                      padding: "1rem",
+                      border: "1px solid #e5e7eb",
                       borderRadius: "6px",
-                      cursor: loading ? "not-allowed" : "pointer",
-                      fontSize: "0.875rem",
-                      fontWeight: 600,
-                      opacity: loading ? 0.6 : 1,
+                      backgroundColor: "#fafafa",
                     }}
                   >
-                    Add Ticker
-                  </button>
-
-                  <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                    <input
-                      type="checkbox"
-                      checked={useCustomRange}
-                      onChange={(e) => setUseCustomRange(e.target.checked)}
-                    />
-                    Use Custom Time Range
-                  </label>
-
-                  {useCustomRange && (
-                    <>
+                    <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.75rem", flexWrap: "wrap" }}>
                       <input
-                        type="date"
-                        value={customStart.toISOString().split("T")[0]}
-                        onChange={(e) => setCustomStart(new Date(e.target.value))}
-                        style={{ padding: "0.5rem", borderRadius: "4px", border: "1px solid #ccc" }}
+                        type="text"
+                        value={newTickerByWatchlist[watchlistName] || ""}
+                        onChange={(e) =>
+                          setNewTickerByWatchlist((prev) => ({
+                            ...prev,
+                            [watchlistName]: e.target.value.toUpperCase(),
+                          }))
+                        }
+                        placeholder="Add Ticker"
+                        style={{ padding: "0.65rem", borderRadius: "4px", border: "1px solid #ccc", width: "150px" }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleAddTicker(watchlistName);
+                          }
+                        }}
                       />
-                      <input
-                        type="date"
-                        value={customEnd.toISOString().split("T")[0]}
-                        onChange={(e) => setCustomEnd(new Date(e.target.value))}
-                        style={{ padding: "0.5rem", borderRadius: "4px", border: "1px solid #ccc" }}
-                      />
-                    </>
-                  )}
+                      <button
+                        type="button"
+                        onClick={() => handleAddTicker(watchlistName)}
+                        disabled={isBusy}
+                        style={{
+                          padding: "0.65rem 1rem",
+                          backgroundColor: "#000000",
+                          color: "#ffffff",
+                          border: "none",
+                          borderRadius: "6px",
+                          cursor: isBusy ? "not-allowed" : "pointer",
+                          fontSize: "0.85rem",
+                          fontWeight: 600,
+                          opacity: isBusy ? 0.6 : 1,
+                        }}
+                      >
+                        {validatingWatchlist === watchlistName ? "Validating..." : "Add Ticker"}
+                      </button>
+                    </div>
 
-                  <button
-                    onClick={handleRefreshWatchlist}
-                    disabled={loading}
-                    style={{
-                      padding: "0.75rem 1.5rem",
-                      backgroundColor: "#000000",
-                      color: "#ffffff",
-                      border: "none",
-                      borderRadius: "6px",
-                      cursor: loading ? "not-allowed" : "pointer",
-                      fontSize: "0.875rem",
-                      fontWeight: 600,
-                      opacity: loading ? 0.6 : 1,
-                    }}
-                  >
-                    🔄 Refresh Watchlist
-                  </button>
-
-                  <button
-                    onClick={handleCalculateMarketCap}
-                    disabled={loading}
-                    style={{
-                      padding: "0.75rem 1.5rem",
-                      backgroundColor: "#000000",
-                      color: "#ffffff",
-                      border: "none",
-                      borderRadius: "6px",
-                      cursor: loading ? "not-allowed" : "pointer",
-                      fontSize: "0.875rem",
-                      fontWeight: 600,
-                      opacity: loading ? 0.6 : 1,
-                    }}
-                  >
-                    🧮 Calculate Market Cap
-                  </button>
-
-                  <button
-                    onClick={handleDeleteWatchlist}
-                    style={{
-                      padding: "0.75rem 1.5rem",
-                      backgroundColor: "#dc2626",
-                      color: "#ffffff",
-                      border: "none",
-                      borderRadius: "6px",
-                      cursor: "pointer",
-                      fontSize: "0.875rem",
-                      fontWeight: 600,
-                    }}
-                  >
-                    🗑️ Delete Watchlist
-                  </button>
-                </div>
-
-                {progress.message && (
-                  <div style={{ marginBottom: "1rem", padding: "0.75rem", background: "#f0f0f0", borderRadius: "4px" }}>
-                    {progress.message}
-                    {progress.total > 0 && ` (${progress.current}/${progress.total})`}
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+                      {tickers.map((ticker) => (
+                        <div
+                          key={`${watchlistName}-${ticker}`}
+                          style={{
+                            padding: "0.4rem 0.75rem",
+                            background: "#f0f0f0",
+                            borderRadius: "4px",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "0.4rem",
+                          }}
+                        >
+                          <span>{ticker}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveTicker(watchlistName, ticker)}
+                            style={{
+                              background: "none",
+                              border: "none",
+                              color: "#dc2626",
+                              cursor: "pointer",
+                              fontSize: "1rem",
+                              lineHeight: 1,
+                            }}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
 
-                <div style={{ marginBottom: "1rem" }}>
-                  <h4 style={{ fontFamily: "Montserrat, sans-serif", marginBottom: "0.5rem" }}>
-                    Tickers in {selectedWatchlist}
-                  </h4>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
-                    {watchlists[selectedWatchlist].map((ticker) => (
-                      <div
-                        key={ticker}
-                        style={{
-                          padding: "0.5rem 1rem",
-                          background: "#f0f0f0",
-                          borderRadius: "4px",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "0.5rem",
-                        }}
-                      >
-                        <span>{ticker}</span>
-                        <button
-                          onClick={() => handleRemoveTicker(ticker)}
-                          style={{
-                            background: "none",
-                            border: "none",
-                            color: "#dc2626",
-                            cursor: "pointer",
-                            fontSize: "1.25rem",
-                            padding: 0,
-                            width: "20px",
-                            height: "20px",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                          }}
-                        >
-                          ×
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
+                <CustomWatchlistsTable
+                  data={currentData}
+                  sortColumn={sortColumnByWatchlist[watchlistName] || ""}
+                  setSortColumn={(value) =>
+                    setSortColumnByWatchlist((prev) => ({ ...prev, [watchlistName]: value }))
+                  }
+                  sortAscending={sortAscendingByWatchlist[watchlistName] ?? true}
+                  setSortAscending={(value) =>
+                    setSortAscendingByWatchlist((prev) => ({ ...prev, [watchlistName]: value }))
+                  }
+                  formatValue={formatValue}
+                  isAdmin={true}
+                  showCustomDatesChange={useCustomRange}
+                />
+              </>
+            )}
+          </div>
+        );
+      })}
 
-              {sortedData.length > 0 && (
-                <>
-                  <div style={{ marginBottom: "1rem", display: "flex", gap: "1rem", alignItems: "center" }}>
-                    <label>
-                      Sort by:
-                      <select
-                        value={sortColumn}
-                        onChange={(e) => setSortColumn(e.target.value)}
-                        style={{ marginLeft: "0.5rem", padding: "0.5rem", borderRadius: "4px", border: "1px solid #ccc" }}
-                      >
-                        <option value="">None</option>
-                        <option value="Ticker">Ticker</option>
-                        <option value="Starting Price">Starting Price</option>
-                        <option value="Current Price">Current Price</option>
-                        <option value="Market Cap">Market Cap</option>
-                        <option value="Daily Stock Change %">Daily Stock Change %</option>
-                        <option value="Change Since Start %">Change Since Start %</option>
-                        <option value="Volume">Volume</option>
-                        <option value="Industry">Industry</option>
-                      </select>
-                    </label>
-                    <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                      <input
-                        type="checkbox"
-                        checked={sortAscending}
-                        onChange={(e) => setSortAscending(e.target.checked)}
-                      />
-                      Ascending
-                    </label>
-                  </div>
-
-                  <div style={{ overflowX: "auto", marginBottom: "1rem" }}>
-                    <table
-                      style={{
-                        width: "100%",
-                        borderCollapse: "collapse",
-                        backgroundColor: "#ffffff",
-                        border: "1px solid #e2e8f0",
-                      }}
-                    >
-                      <thead>
-                        <tr style={{ backgroundColor: "#f8f8f8" }}>
-                          {["Ticker", "Starting Price", "Current Price", "Market Cap", "Daily Stock Change %", "Change Since Start %", "Volume", "Industry"].map((col) => (
-                            <th
-                              key={col}
-                              style={{
-                                padding: "1rem",
-                                textAlign: "left",
-                                borderBottom: "2px solid #e2e8f0",
-                                fontWeight: 600,
-                                fontSize: "0.875rem",
-                                cursor: "pointer",
-                              }}
-                              onClick={() => {
-                                if (sortColumn === col) {
-                                  setSortAscending(!sortAscending);
-                                } else {
-                                  setSortColumn(col);
-                                  setSortAscending(true);
-                                }
-                              }}
-                            >
-                              {col}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {sortedData.map((row, idx) => (
-                          <tr key={idx} style={{ borderBottom: "1px solid #e2e8f0" }}>
-                            <td style={{ padding: "0.75rem" }}>{row.Ticker}</td>
-                            <td style={{ padding: "0.75rem" }}>{formatValue(row["Starting Price"])}</td>
-                            <td style={{ padding: "0.75rem" }}>{formatValue(row["Current Price"])}</td>
-                            <td style={{ padding: "0.75rem" }}>{formatValue(row["Market Cap"])}</td>
-                            <td style={{ padding: "0.75rem", color: (row["Daily Stock Change %"] || 0) >= 0 ? "#008000" : "#dc2626" }}>
-                              {row["Daily Stock Change %"] !== null ? `${row["Daily Stock Change %"].toFixed(2)}%` : "N/A"}
-                            </td>
-                            <td style={{ padding: "0.75rem", color: (row["Change Since Start %"] || 0) >= 0 ? "#008000" : "#dc2626" }}>
-                              {row["Change Since Start %"] !== null ? `${row["Change Since Start %"].toFixed(2)}%` : "N/A"}
-                            </td>
-                            <td style={{ padding: "0.75rem" }}>{formatValue(row.Volume)}</td>
-                            <td style={{ padding: "0.75rem" }}>{row.Industry || "N/A"}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  <button
-                    onClick={() => {
-                      const csv = [
-                        ["Ticker", "Starting Price", "Current Price", "Market Cap", "Daily Stock Change %", "Change Since Start %", "Volume", "Industry"].join(","),
-                        ...sortedData.map((row) =>
-                          [
-                            row.Ticker,
-                            row["Starting Price"] ?? "",
-                            row["Current Price"] ?? "",
-                            row["Market Cap"] ?? "",
-                            row["Daily Stock Change %"] ?? "",
-                            row["Change Since Start %"] ?? "",
-                            row.Volume ?? "",
-                            row.Industry ?? "",
-                          ].join(",")
-                        ),
-                      ].join("\n");
-                      const blob = new Blob([csv], { type: "text/csv" });
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement("a");
-                      a.href = url;
-                      a.download = `${selectedWatchlist}_${new Date().toISOString().split("T")[0]}.csv`;
-                      a.click();
-                    }}
-                    style={{
-                      padding: "0.75rem 1.5rem",
-                      backgroundColor: "#000000",
-                      color: "#ffffff",
-                      border: "none",
-                      borderRadius: "6px",
-                      cursor: "pointer",
-                      fontSize: "0.875rem",
-                      fontWeight: 600,
-                    }}
-                  >
-                    Download CSV
-                  </button>
-                </>
-              )}
-            </>
-          )}
-        </>
-      )}
-
-      {Object.keys(watchlists).length === 0 && (
-        <div style={{ padding: "2rem", textAlign: "center", color: "#666666" }}>
-          No watchlists created yet. Create one above!
-        </div>
-      )}
+      <div style={{ marginTop: "1rem", paddingTop: "1rem", borderTop: "1px solid #e5e7eb" }}>
+        {!showCreateControls ? (
+          <button
+            type="button"
+            onClick={() => setShowCreateControls(true)}
+            style={{
+              padding: "0.75rem 1.25rem",
+              backgroundColor: "#000000",
+              color: "#ffffff",
+              border: "none",
+              borderRadius: "6px",
+              cursor: "pointer",
+              fontSize: "0.9rem",
+              fontWeight: 600,
+            }}
+          >
+            Create New Watchlist
+          </button>
+        ) : (
+          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+            <input
+              type="text"
+              value={newWatchlistName}
+              onChange={(e) => setNewWatchlistName(e.target.value)}
+              placeholder="Watchlist Name"
+              style={{ padding: "0.75rem", borderRadius: "4px", border: "1px solid #ccc", minWidth: "220px" }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleCreateWatchlist();
+                }
+              }}
+            />
+            <button
+              type="button"
+              onClick={handleCreateWatchlist}
+              style={{
+                padding: "0.75rem 1rem",
+                backgroundColor: "#000000",
+                color: "#ffffff",
+                border: "none",
+                borderRadius: "6px",
+                cursor: "pointer",
+                fontWeight: 600,
+              }}
+            >
+              Create
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowCreateControls(false);
+                setNewWatchlistName("");
+              }}
+              style={{
+                padding: "0.75rem 1rem",
+                backgroundColor: "#6b7280",
+                color: "#ffffff",
+                border: "none",
+                borderRadius: "6px",
+                cursor: "pointer",
+                fontWeight: 600,
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
 
 export default CustomWatchlists;
+

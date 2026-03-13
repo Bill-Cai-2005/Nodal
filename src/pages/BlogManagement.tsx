@@ -229,7 +229,7 @@ const BlogManagement = () => {
           errorMessage = "Request too large. Images are too big. Try using smaller images or fewer blogs at once.";
         } else if (contentType && contentType.includes("application/json")) {
           try {
-            const errorData = await response.json();
+        const errorData = await response.json();
             errorMessage = errorData.error || errorMessage;
             if (errorData.details) {
               errorMessage += ` (${errorData.details})`;
@@ -253,8 +253,8 @@ const BlogManagement = () => {
         id: blog._id || blog.id,
       }));
       setBlogs(normalizedBlogs);
-      setError("");
-      alert("Blogs saved successfully!");
+    setError("");
+    alert("Blogs saved successfully!");
     } catch (err: any) {
       console.error("Error saving blogs:", err);
       setError(err.message || "Failed to save blogs. Make sure the backend server is running.");

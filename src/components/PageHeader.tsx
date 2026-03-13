@@ -42,7 +42,7 @@ const PageHeader = ({ researchColor = "#000000", zIndex = 10 }: PageHeaderProps)
         }}
         onMouseLeave={(e) => {
           e.currentTarget.style.opacity = "1";
-      }}
+        }}
     >
       <span style={{ color: "#8B0000" }}>Nodal</span>{" "}
       <span style={{ color: researchColor }}>Research</span>

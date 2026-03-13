@@ -119,7 +119,7 @@ const MobileHome = () => {
             e.currentTarget.style.opacity = "1";
           }}
         >
-          Newsletter
+          Nodal Watchlist
         </div>
       </div>
       <div className="mobile-footer" style={footerStyle}>

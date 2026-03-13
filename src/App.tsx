@@ -7,7 +7,7 @@ import Blog from "./pages/Blog";
 import Blogs from "./pages/Blogs";
 import About from "./pages/About";
 import Legal from "./pages/Legal";
-import MarbleWatchlist from "./pages/MarbleWatchlist";
+import NodalWatchlist from "./pages/NodalWatchlist";
 import NotFound from "./pages/NotFound";
 
 function App() {
@@ -27,7 +27,7 @@ function App() {
         />
         <Route path="/about" element={<About />} />
         <Route path="/legal" element={<Legal />} />
-        <Route path="/newsletter" element={<MarbleWatchlist />} />
+        <Route path="/newsletter" element={<NodalWatchlist />} />
         <Route path="/blogs" element={<Blogs />} />
         <Route path="/blogManagement" element={<BlogManagement />} />
         <Route path="/BlogManagement" element={<BlogManagement />} />

@@ -8,6 +8,7 @@ import blogsRouter from "./routes/blogs.js";
 import blogByIdRouter from "./routes/blogById.js";
 import uploadImageRouter from "./routes/uploadImage.js";
 import watchlistCacheRouter from "./routes/watchlistCache.js";
+import polygonProxyRouter from "./routes/polygonProxy.js";
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
@@ -68,6 +69,7 @@ app.use("/api/blogs", blogsRouter);
 app.use("/api/blogs", blogByIdRouter);
 app.use("/api/upload-image", uploadImageRouter);
 app.use("/api/watchlist-cache", watchlistCacheRouter);
+app.use("/api/polygon", polygonProxyRouter);
 
 // Health check
 app.get("/health", (_req: express.Request, res: express.Response) => {

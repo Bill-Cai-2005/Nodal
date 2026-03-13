@@ -1,18 +1,12 @@
 /**
  * Polygon.io API utilities
- * Note: API key should be set via VITE_POLYGON_API_KEY environment variable
+ * All calls are routed through the backend proxy at /api/polygon,
+ * which holds the POLYGON_API_KEY on the server (Render).
  */
 
-const POLYGON_BASE_URL = "https://api.polygon.io";
-const SNAPSHOT_BATCH_SIZE = 250;
+import { getApiEndpoint } from "./api";
 
-const getApiKey = (): string => {
-  const key = import.meta.env.VITE_POLYGON_API_KEY;
-  if (!key) {
-    throw new Error("Missing Polygon API key. Set VITE_POLYGON_API_KEY as an environment variable.");
-  }
-  return key.trim();
-};
+const SNAPSHOT_BATCH_SIZE = 250;
 
 export interface StockData {
   Ticker: string;
@@ -38,7 +32,7 @@ const polygonGet = async (
   retries = 4,
   signal?: AbortSignal
 ): Promise<any> => {
-  const q: Record<string, string> = { ...(params || {}), apiKey: getApiKey() };
+  const q: Record<string, string> = { ...(params || {}) } as Record<string, string>;
   const queryString = new URLSearchParams(
     Object.entries(q).reduce((acc, [k, v]) => {
       acc[k] = String(v);
@@ -54,9 +48,12 @@ const polygonGet = async (
       const onAbort = () => controller.abort();
       if (signal) signal.addEventListener("abort", onAbort, { once: true });
 
-      const response = await fetch(`${POLYGON_BASE_URL}${path}?${queryString}`, {
-        signal: controller.signal,
-      });
+      const response = await fetch(
+        `${getApiEndpoint(`/api/polygon${path}`)}${queryString ? `?${queryString}` : ""}`,
+        {
+          signal: controller.signal,
+        }
+      );
 
       clearTimeout(timeoutId);
       if (signal) signal.removeEventListener("abort", onAbort);

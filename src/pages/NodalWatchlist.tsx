@@ -3,10 +3,10 @@ import { useNavigate } from "react-router-dom";
 import PageHeader from "../components/PageHeader";
 import Footer from "../components/Footer";
 import { useResponsivePadding } from "../hooks/useResponsivePadding";
-import UniversalWatchlist from "../components/MarbleWatchlist/UniversalWatchlist";
-import CustomWatchlists from "../components/MarbleWatchlist/CustomWatchlists";
+import UniversalWatchlist from "../components/NodalWatchlist/UniversalWatchlist";
+import CustomWatchlists from "../components/NodalWatchlist/CustomWatchlists";
 
-const MarbleWatchlist = () => {
+const NodalWatchlist = () => {
   const navigate = useNavigate();
   const responsivePaddingTop = useResponsivePadding();
   const [activeTab, setActiveTab] = useState<"universal" | "custom">("universal");
@@ -110,4 +110,4 @@ const MarbleWatchlist = () => {
   );
 };
 
-export default MarbleWatchlist;
+export default NodalWatchlist;

@@ -26,12 +26,12 @@ export interface MarketCapCache {
   };
 }
 
-const WATCHLISTS_KEY = "marble_watchlists";
-const TICKERS_KEY = "marble_tickers";
-const START_PRICE_KEY = "marble_start_prices";
-const TICKER_REF_KEY = "marble_ticker_ref";
-const MARKET_CAP_KEY = "marble_market_cap";
-const UNIVERSAL_CACHE_KEY = "marble_universal_cache";
+const WATCHLISTS_KEY = "nodal_watchlists";
+const TICKERS_KEY = "nodal_tickers";
+const START_PRICE_KEY = "nodal_start_prices";
+const TICKER_REF_KEY = "nodal_ticker_ref";
+const MARKET_CAP_KEY = "nodal_market_cap";
+const UNIVERSAL_CACHE_KEY = "nodal_universal_cache";
 
 export const loadWatchlists = (): WatchlistCache => {
   try {

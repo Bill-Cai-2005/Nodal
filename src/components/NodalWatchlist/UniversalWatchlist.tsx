@@ -3,9 +3,12 @@ import {
   fetchNyseNasdaqTickers,
   fetchStockData,
   fetchSnapshotBatch,
+  fetchTickerReference,
   type StockData,
 } from "../../utils/polygonApi";
+import { loadMarketCapsFromIndexedDb, replaceMarketCapsInIndexedDb } from "../../utils/marketCapIndexedDb";
 import { runWithConcurrency } from "../../utils/concurrency";
+import { fetchCompanySummary } from "../../utils/companySummaryApi";
 import UniversalWatchlistControls from "./UniversalWatchlistControls";
 import UniversalWatchlistTable from "./UniversalWatchlistTable";
 
@@ -20,6 +23,11 @@ const UniversalWatchlist = () => {
   const [sortColumn, setSortColumn] = useState<string>("");
   const [sortAscending, setSortAscending] = useState(true);
   const [minMarketCap, setMinMarketCap] = useState(0);
+  const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
+  const [summaryText, setSummaryText] = useState("");
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [summaryCache, setSummaryCache] = useState<Record<string, string>>({});
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -67,9 +75,9 @@ const UniversalWatchlist = () => {
             Ticker: ticker,
             "Starting Price": prevClose,
             "Current Price": currentPrice,
-            "Market Cap": null, // intentionally left empty for snapshot-only table seed
+            "Market Cap": null,
             "Daily Stock Change %": dailyChange,
-            "Custom Dates Change %": null, // populated only by custom-range refresh
+            "Custom Dates Change %": null,
             Volume: volume,
             Industry: null,
             Error: snap ? null : "Missing snapshot",
@@ -78,7 +86,7 @@ const UniversalWatchlist = () => {
         setData(rows);
       }
 
-      setProgress({ current: 0, total: 0, message: `✅ Loaded ${allTickers.length} tickers and table snapshot` });
+      setProgress({ current: 0, total: 0, message: `Loaded ${allTickers.length} tickers and table snapshot` });
     } catch (err: any) {
       alert(`Error: ${err.message}`);
     } finally {
@@ -101,21 +109,49 @@ const UniversalWatchlist = () => {
       setProgress({ current: 0, total: allTickers.length, message: "Fetching stock data..." });
 
       const byTicker: Record<string, StockData> = {};
+      const existingByTicker = Object.fromEntries(data.map((row) => [row.Ticker, row]));
       let completed = 0;
 
-      await runWithConcurrency(allTickers, 50, async (ticker) => {
+      await runWithConcurrency(allTickers, 24, async (ticker) => {
         if (controller.signal.aborted) return null;
-        const row = await fetchStockData(
-          ticker,
-          useCustomRange ? customStart : undefined,
-          useCustomRange ? customEnd : undefined
-        );
-        byTicker[ticker] = row;
+        const existing = existingByTicker[ticker] as StockData | undefined;
+        const needsMarket = !existing || existing["Market Cap"] === null || !existing.Industry;
+        const needsPrice = !existing ||
+          existing["Starting Price"] === null ||
+          existing["Current Price"] === null ||
+          existing["Daily Stock Change %"] === null ||
+          existing.Volume === null ||
+          (useCustomRange && existing["Custom Dates Change %"] === null);
+
+        if (!needsMarket && !needsPrice && existing) {
+          byTicker[ticker] = existing;
+        } else if (needsPrice) {
+          const fetched = await fetchStockData(
+            ticker,
+            useCustomRange ? customStart : undefined,
+            useCustomRange ? customEnd : undefined,
+            undefined,
+            { includeReference: needsMarket, signal: controller.signal }
+          );
+          byTicker[ticker] = {
+            ...fetched,
+            "Market Cap": needsMarket ? fetched["Market Cap"] : (existing?.["Market Cap"] ?? fetched["Market Cap"]),
+            Industry: needsMarket ? fetched.Industry : (existing?.Industry ?? fetched.Industry),
+          };
+        } else if (existing) {
+          const ref = await fetchTickerReference(ticker, controller.signal);
+          byTicker[ticker] = {
+            ...existing,
+            "Market Cap": ref?.market_cap ?? existing["Market Cap"],
+            Industry: ref?.industry ?? existing.Industry,
+          };
+        }
+
         completed += 1;
         if (completed % 10 === 0 || completed === allTickers.length) {
-          setProgress({ current: completed, total: allTickers.length, message: "Fetching stock data..." });
+          setProgress({ current: completed, total: allTickers.length, message: "Refreshing missing data only..." });
         }
-        return row;
+        return byTicker[ticker];
       });
 
       if (controller.signal.aborted) {
@@ -123,23 +159,27 @@ const UniversalWatchlist = () => {
         return;
       }
 
-      setData(
-        allTickers.map(
-          (ticker) =>
-            byTicker[ticker] || {
-              Ticker: ticker,
-              "Starting Price": null,
-              "Current Price": null,
-              "Market Cap": null,
-              "Daily Stock Change %": null,
-              "Custom Dates Change %": null,
-              Volume: null,
-              Industry: null,
-              Error: "Missing data",
-            }
-        )
+      const refreshedRows = allTickers.map(
+        (ticker) =>
+          byTicker[ticker] || {
+            Ticker: ticker,
+            "Starting Price": null,
+            "Current Price": null,
+            "Market Cap": null,
+            "Daily Stock Change %": null,
+            "Custom Dates Change %": null,
+            Volume: null,
+            Industry: null,
+            Error: "Missing data",
+          }
       );
-      setProgress({ current: 0, total: 0, message: "✅ Refresh complete!" });
+      setData(refreshedRows);
+      try {
+        await replaceMarketCapsInIndexedDb(refreshedRows);
+      } catch (e) {
+        console.warn("Failed to persist market caps to IndexedDB:", e);
+      }
+      setProgress({ current: 0, total: 0, message: "Refresh complete!" });
     } catch (err: any) {
       if (err?.name === "AbortError") {
         setProgress({ current: 0, total: 0, message: "Cancelled refresh." });
@@ -148,6 +188,48 @@ const UniversalWatchlist = () => {
       alert(`Error: ${err.message}`);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleLoadLocallyStoredData = async () => {
+    try {
+      const marketCaps = await loadMarketCapsFromIndexedDb();
+      if (Object.keys(marketCaps).length === 0) {
+        alert("No locally stored market cap data found.");
+        return;
+      }
+
+      setData((prev) =>
+        prev.map((row) => ({
+          ...row,
+          "Market Cap": marketCaps[row.Ticker] ?? row["Market Cap"],
+        }))
+      );
+      setProgress({ current: 0, total: 0, message: "Loaded locally stored market cap data." });
+    } catch (e: any) {
+      alert(`Failed to load locally stored data: ${e?.message || "Unknown error"}`);
+    }
+  };
+
+  const handleRowClick = async (ticker: string) => {
+    setSelectedTicker(ticker);
+    setSummaryError(null);
+
+    if (summaryCache[ticker]) {
+      setSummaryText(summaryCache[ticker]);
+      return;
+    }
+
+    try {
+      setSummaryLoading(true);
+      setSummaryText("");
+      const summary = await fetchCompanySummary(ticker);
+      setSummaryText(summary);
+      setSummaryCache((prev) => ({ ...prev, [ticker]: summary }));
+    } catch (err: any) {
+      setSummaryError(err?.message || "Failed to generate summary");
+    } finally {
+      setSummaryLoading(false);
     }
   };
 
@@ -205,6 +287,7 @@ const UniversalWatchlist = () => {
         minMarketCap={minMarketCap}
         setMinMarketCap={setMinMarketCap}
         onLoadTickers={handleLoadTickers}
+        onLoadLocallyStoredData={handleLoadLocallyStoredData}
         onRefresh={handleRefresh}
       />
 
@@ -217,7 +300,31 @@ const UniversalWatchlist = () => {
         sortAscending={sortAscending}
         setSortAscending={setSortAscending}
         formatValue={formatValue}
+        onRowClick={handleRowClick}
+        selectedTicker={selectedTicker}
       />
+
+      {selectedTicker && (
+        <div
+          style={{
+            border: "1px solid #e2e8f0",
+            borderRadius: "8px",
+            padding: "1rem",
+            backgroundColor: "#ffffff",
+            marginTop: "0.75rem",
+            marginBottom: "1rem",
+          }}
+        >
+          <h3 style={{ marginTop: 0, marginBottom: "0.5rem" }}>
+            AI Company Summary: {selectedTicker}
+          </h3>
+          {summaryLoading && <p style={{ margin: 0 }}>Generating summary...</p>}
+          {summaryError && <p style={{ margin: 0, color: "#dc2626" }}>{summaryError}</p>}
+          {!summaryLoading && !summaryError && summaryText && (
+            <p style={{ margin: 0, lineHeight: 1.6 }}>{summaryText}</p>
+          )}
+        </div>
+      )}
     </div>
   );
 };

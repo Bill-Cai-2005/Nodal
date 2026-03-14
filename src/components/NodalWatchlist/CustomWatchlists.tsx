@@ -144,13 +144,16 @@ const CustomWatchlists = () => {
       ...watchlists,
       [watchlistName]: (watchlists[watchlistName] || []).filter((t) => t !== ticker),
     };
+    const filteredData = (watchlistData[watchlistName] || []).filter((row) => row.Ticker !== ticker);
+
     setWatchlists(updated);
     saveWatchlists(updated);
+    setWatchlistData((prev) => ({ ...prev, [watchlistName]: filteredData }));
     try {
       await saveCustomWatchlistToDb(
         watchlistName,
         updated[watchlistName] || [],
-        watchlistData[watchlistName] || [],
+        filteredData,
         null
       );
     } catch (e: any) {

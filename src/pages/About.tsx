@@ -83,13 +83,10 @@ const About = () => {
         />
         <div style={contentWrapperStyle} className="about-content">
           <p style={paragraphStyle} className="about-paragraph">
-            Nodal is an equity research collective.
-          </p>
-          <p style={paragraphStyle} className="about-paragraph">
-            We commit 1.2 Million USD of internal capital to our research.
+            Nodal is a thematic equity research collective.
           </p>
           <p style={paragraphStyle} className="about-paragraph mobile-marble-note">
-            We were previously {" "}
+            From the team behind {" "}
             <a
               href="https://www.marbleinvestments.ca/"
               target="_blank"
@@ -111,16 +108,16 @@ const About = () => {
             >
               Marble-Investments
             </a>
-            {" "}to prove myself to the world.
+            {" "}to step into the world of investing.
           </p>
           <p style={paragraphStyle} className="about-paragraph founder-note">
             In 3 years Marble grew to 1.2 Million USD averaging 70% returns.
           </p>
           <p style={paragraphStyle} className="about-paragraph founder-note">
-            Looking back these numbers don't really mean anything.
+            As Marble grows, the focus is shifting more towards professionalism.
           </p>
           <p style={paragraphStyle} className="about-paragraph founder-note">
-            I'm dedicating my next few years to sharing the absolute best research time can buy.
+            Nodal returns to the roots, uncovering the ideas that drive the market.
           </p>
         </div>
         <div

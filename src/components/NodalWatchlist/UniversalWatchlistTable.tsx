@@ -9,6 +9,8 @@ type Props = {
   sortAscending: boolean;
   setSortAscending: (value: boolean) => void;
   formatValue: (value: number | null) => string;
+  onRowClick: (ticker: string) => void;
+  selectedTicker: string | null;
 };
 
 const UniversalWatchlistTable = ({
@@ -20,7 +22,14 @@ const UniversalWatchlistTable = ({
   sortAscending,
   setSortAscending,
   formatValue,
+  onRowClick,
+  selectedTicker,
 }: Props) => {
+  const formatVolume = (value: number | null): string => {
+    if (value === null) return "N/A";
+    return Math.round(value).toLocaleString();
+  };
+
   const columns = [
     "Ticker",
     "Starting Price",
@@ -83,8 +92,17 @@ const UniversalWatchlistTable = ({
             </tr>
           </thead>
           <tbody>
-            {displayData.map((row, idx) => (
-              <tr key={idx} style={{ borderBottom: "1px solid #e2e8f0" }}>
+            {displayData.map((row) => (
+              <tr
+                key={row.Ticker}
+                onClick={() => onRowClick(row.Ticker)}
+                title={`Generate AI summary for ${row.Ticker}`}
+                style={{
+                  borderBottom: "1px solid #e2e8f0",
+                  cursor: "pointer",
+                  backgroundColor: selectedTicker === row.Ticker ? "#f0f9ff" : "#ffffff",
+                }}
+              >
                 <td style={{ padding: "0.75rem" }}>{row.Ticker}</td>
                 <td style={{ padding: "0.75rem" }}>{formatValue(row["Starting Price"])}</td>
                 <td style={{ padding: "0.75rem" }}>{formatValue(row["Current Price"])}</td>
@@ -104,7 +122,7 @@ const UniversalWatchlistTable = ({
                       : "N/A"}
                   </td>
                 )}
-                <td style={{ padding: "0.75rem" }}>{formatValue(row.Volume)}</td>
+                <td style={{ padding: "0.75rem" }}>{formatVolume(row.Volume)}</td>
               </tr>
             ))}
           </tbody>

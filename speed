@@ -1,0 +1,362 @@
+REFRESH SPEED REFERENCE
+This file is for reference only and is not imported anywhere.
+
+============================================================
+src/components/NodalWatchlist/UniversalWatchlist.tsx
+Relevant refresh handlers and related state
+============================================================
+
+const [tickers, setTickers] = useState<{ nyse: string[]; nasdaq: string[] }>({ nyse: [], nasdaq: [] });
+const [data, setData] = useState<StockData[]>([]);
+const [loading, setLoading] = useState(false);
+const [progress, setProgress] = useState({ current: 0, total: 0, message: "" });
+const [useCustomRange, setUseCustomRange] = useState(false);
+const [customStart, setCustomStart] = useState<Date>(new Date());
+const [customEnd, setCustomEnd] = useState<Date>(new Date());
+const abortRef = useRef<AbortController | null>(null);
+
+const handleLoadTickers = async () => {
+  try {
+    setLoading(true);
+    setProgress({ current: 0, total: 0, message: "Fetching tickers..." });
+    const result = await fetchNyseNasdaqTickers((current, total) => {
+      setProgress({ current, total, message: `Fetched ${current} tickers...` });
+    });
+    setTickers(result);
+
+    const allTickers = [...result.nyse, ...result.nasdaq];
+    if (allTickers.length > 0) {
+      setProgress({ current: 0, total: allTickers.length, message: "Fetching snapshot batches..." });
+      const snapshots = await fetchSnapshotBatch(allTickers);
+      const rows: StockData[] = allTickers.map((ticker, idx) => {
+        if ((idx + 1) % 250 === 0 || idx + 1 === allTickers.length) {
+          setProgress({
+            current: idx + 1,
+            total: allTickers.length,
+            message: "Building table from snapshots...",
+          });
+        }
+
+        const snap = snapshots[ticker];
+        const day = snap?.day || {};
+        const prevDay = snap?.prevDay || {};
+        const lastTrade = snap?.lastTrade || {};
+        const prevClose = prevDay.c ? parseFloat(prevDay.c) : null;
+        const currentPrice = lastTrade.p ? parseFloat(lastTrade.p) : day.c ? parseFloat(day.c) : null;
+        const volume = day.v ? parseFloat(day.v) : null;
+
+        let dailyChange: number | null = null;
+        if (prevClose !== null && prevClose !== 0 && currentPrice !== null) {
+          dailyChange = ((currentPrice - prevClose) / prevClose) * 100;
+        }
+
+        return {
+          Ticker: ticker,
+          "Starting Price": prevClose,
+          "Current Price": currentPrice,
+          "Market Cap": null,
+          "Daily Stock Change %": dailyChange,
+          "Custom Dates Change %": null,
+          Volume: volume,
+          Industry: null,
+          Error: snap ? null : "Missing snapshot",
+        };
+      });
+      setData(rows);
+    }
+
+    setProgress({ current: 0, total: 0, message: `✅ Loaded ${allTickers.length} tickers and table snapshot` });
+  } catch (err: any) {
+    alert(`Error: ${err.message}`);
+  } finally {
+    setLoading(false);
+  }
+};
+
+const handleRefresh = async () => {
+  const allTickers = [...tickers.nyse, ...tickers.nasdaq];
+  if (allTickers.length === 0) {
+    alert("Please fetch tickers first");
+    return;
+  }
+
+  try {
+    setLoading(true);
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setProgress({ current: 0, total: allTickers.length, message: "Fetching stock data..." });
+
+    const byTicker: Record<string, StockData> = {};
+    let completed = 0;
+
+    await runWithConcurrency(allTickers, 24, async (ticker) => {
+      if (controller.signal.aborted) return null;
+      const row = await fetchStockData(
+        ticker,
+        useCustomRange ? customStart : undefined,
+        useCustomRange ? customEnd : undefined
+      );
+      byTicker[ticker] = row;
+      completed += 1;
+      if (completed % 10 === 0 || completed === allTickers.length) {
+        setProgress({ current: completed, total: allTickers.length, message: "Fetching stock data..." });
+      }
+      return row;
+    });
+
+    if (controller.signal.aborted) {
+      setProgress({ current: completed, total: allTickers.length, message: "Cancelled refresh." });
+      return;
+    }
+
+    setData(
+      allTickers.map(
+        (ticker) =>
+          byTicker[ticker] || {
+            Ticker: ticker,
+            "Starting Price": null,
+            "Current Price": null,
+            "Market Cap": null,
+            "Daily Stock Change %": null,
+            "Custom Dates Change %": null,
+            Volume: null,
+            Industry: null,
+            Error: "Missing data",
+          }
+      )
+    );
+    setProgress({ current: 0, total: 0, message: "✅ Refresh complete!" });
+  } catch (err: any) {
+    if (err?.name === "AbortError") {
+      setProgress({ current: 0, total: 0, message: "Cancelled refresh." });
+      return;
+    }
+    alert(`Error: ${err.message}`);
+  } finally {
+    setLoading(false);
+  }
+};
+
+============================================================
+src/utils/concurrency.ts
+Concurrency control used by refresh
+============================================================
+
+export async function runWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+
+  const n = Math.max(1, Math.min(concurrency, items.length || 1));
+  const runners = Array.from({ length: n }, async () => {
+    while (true) {
+      const current = nextIndex;
+      nextIndex += 1;
+      if (current >= items.length) return;
+      results[current] = await worker(items[current], current);
+    }
+  });
+
+  await Promise.all(runners);
+  return results;
+}
+
+============================================================
+src/utils/polygonApi.ts
+Core request/retry and per-ticker refresh workload
+============================================================
+
+const SNAPSHOT_BATCH_SIZE = 250;
+
+const polygonGet = async (
+  path: string,
+  params?: Record<string, string | number | boolean>,
+  timeout = 20,
+  retries = 4,
+  signal?: AbortSignal
+): Promise<any> => {
+  const q: Record<string, string> = { ...(params || {}) } as Record<string, string>;
+  const queryString = new URLSearchParams(
+    Object.entries(q).reduce((acc, [k, v]) => {
+      acc[k] = String(v);
+      return acc;
+    }, {} as Record<string, string>)
+  ).toString();
+
+  let lastErr: Error | null = null;
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeout * 1000);
+      const onAbort = () => controller.abort();
+      if (signal) signal.addEventListener("abort", onAbort, { once: true });
+
+      const response = await fetch(
+        `${getApiEndpoint(`/api/polygon${path}`)}${queryString ? `?${queryString}` : ""}`,
+        { signal: controller.signal }
+      );
+
+      clearTimeout(timeoutId);
+      if (signal) signal.removeEventListener("abort", onAbort);
+
+      if (response.status === 429 || response.status >= 500) {
+        await new Promise((resolve) => setTimeout(resolve, 500 * Math.pow(2, attempt)));
+        continue;
+      }
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      return await response.json();
+    } catch (err: any) {
+      lastErr = err;
+      if (signal?.aborted) break;
+      if (attempt < retries - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 500 * Math.pow(2, attempt)));
+      }
+    }
+  }
+  throw lastErr || new Error("Request failed");
+};
+
+export const fetchStockData = async (
+  ticker: string,
+  customStartDate?: Date,
+  customEndDate?: Date,
+  startPriceCache?: Record<string, { prices: Record<string, number> }>
+): Promise<StockData> => {
+  try {
+    let marketCap: number | null = null;
+    let industry: string | null = null;
+
+    const ref = await fetchTickerReference(ticker);
+    if (ref) {
+      marketCap = ref.market_cap;
+      industry = ref.industry;
+    }
+
+    let changePct: number | null = null;
+    let startingPrice: number | null = null;
+    let currentPrice: number | null = null;
+    let volume: number | null = null;
+    const useCustomRange = customStartDate && customEndDate;
+
+    if (useCustomRange && customStartDate && customEndDate) {
+      const dateKey = toIso(customStartDate);
+      let cachedPrice: number | null = null;
+
+      if (startPriceCache?.[dateKey]?.prices) {
+        cachedPrice = safeFloat(startPriceCache[dateKey].prices[ticker]);
+      }
+
+      if (cachedPrice !== null) {
+        startingPrice = cachedPrice;
+      } else {
+        const toDate = new Date(customStartDate);
+        toDate.setDate(toDate.getDate() + 14);
+        const aggs = await polygonGet(
+          `/v2/aggs/ticker/${ticker}/range/1/day/${toIso(customStartDate)}/${toIso(toDate)}`,
+          { adjusted: "true", sort: "asc", limit: 50 }
+        );
+        const rows = aggs?.results || [];
+        if (rows.length > 0) {
+          startingPrice = safeFloat(rows[0].o);
+        }
+      }
+
+      const fromDate = new Date(customEndDate);
+      fromDate.setDate(fromDate.getDate() - 14);
+      const aggs = await polygonGet(
+        `/v2/aggs/ticker/${ticker}/range/1/day/${toIso(fromDate)}/${toIso(customEndDate)}`,
+        { adjusted: "true", sort: "asc", limit: 50 }
+      );
+      const rows = aggs?.results || [];
+      if (rows.length > 0) {
+        const last = rows[rows.length - 1];
+        currentPrice = safeFloat(last.c);
+        volume = safeFloat(last.v);
+      }
+
+      if (startingPrice && startingPrice !== 0 && currentPrice !== null) {
+        changePct = ((currentPrice - startingPrice) / startingPrice) * 100;
+      }
+    } else {
+      const fromDate = new Date();
+      fromDate.setDate(fromDate.getDate() - 7);
+      const aggs = await polygonGet(
+        `/v2/aggs/ticker/${ticker}/range/1/day/${toIso(fromDate)}/${toIso(new Date())}`,
+        { adjusted: "true", sort: "asc", limit: 5000 }
+      );
+      const rows = aggs?.results || [];
+      if (rows.length >= 1) {
+        const lastClose = safeFloat(rows[rows.length - 1].c);
+        const prevClose = rows.length >= 2
+          ? safeFloat(rows[rows.length - 2].c)
+          : safeFloat(rows[rows.length - 1].o);
+        if (prevClose && prevClose !== 0 && lastClose !== null) {
+          changePct = ((lastClose - prevClose) / prevClose) * 100;
+        }
+        startingPrice = prevClose;
+        currentPrice = lastClose;
+        volume = safeFloat(rows[rows.length - 1].v);
+      }
+    }
+
+    return {
+      Ticker: ticker,
+      "Starting Price": startingPrice,
+      "Current Price": currentPrice,
+      "Market Cap": marketCap,
+      "Daily Stock Change %": changePct,
+      "Custom Dates Change %": useCustomRange ? changePct : null,
+      Volume: volume,
+      Industry: industry,
+      Error: null,
+    };
+  } catch (err: any) {
+    return {
+      Ticker: ticker,
+      "Starting Price": null,
+      "Current Price": null,
+      "Market Cap": null,
+      "Daily Stock Change %": null,
+      "Custom Dates Change %": null,
+      Volume: null,
+      Industry: null,
+      Error: err.message || "Unknown error",
+    };
+  }
+};
+
+export const fetchNyseNasdaqTickers = async (
+  onProgress?: (progress: number, total: number) => void
+): Promise<{ nyse: string[]; nasdaq: string[] }> => {
+  // ... keeps paging /v3/reference/tickers using cursor and builds ticker arrays ...
+};
+
+export const fetchSnapshotBatch = async (tickers: string[]): Promise<Record<string, any>> => {
+  const chunks: string[][] = [];
+  for (let i = 0; i < tickers.length; i += SNAPSHOT_BATCH_SIZE) {
+    chunks.push(tickers.slice(i, i + SNAPSHOT_BATCH_SIZE));
+  }
+
+  const results: Record<string, any> = {};
+  for (const chunk of chunks) {
+    try {
+      const data = await polygonGet("/v2/snapshot/locale/us/markets/stocks/tickers", {
+        tickers: chunk.join(","),
+      });
+      for (const t of data?.tickers || []) {
+        results[String(t.ticker).toUpperCase()] = t;
+      }
+    } catch (err) {
+      console.error("Snapshot batch failed:", err);
+    }
+  }
+  return results;
+};

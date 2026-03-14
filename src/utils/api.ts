@@ -16,14 +16,14 @@ export const getApiEndpoint = (endpoint: string): string => {
   const baseUrl = getApiUrl();
   // Ensure endpoint starts with /
   let cleanEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
-  
+
   // Remove trailing slash from baseUrl if present
   let cleanBaseUrl = baseUrl.replace(/\/$/, "");
-  
+
   // If baseUrl already ends with /api and endpoint starts with /api, remove /api from endpoint
   if (cleanBaseUrl.endsWith("/api") && cleanEndpoint.startsWith("/api")) {
     cleanEndpoint = cleanEndpoint.replace(/^\/api/, "");
   }
-  
+
   return `${cleanBaseUrl}${cleanEndpoint}`;
 };

@@ -7,6 +7,7 @@
 import { getApiEndpoint } from "./api";
 
 const SNAPSHOT_BATCH_SIZE = 250;
+const LOG_REFRESH_SPEED = true;
 
 export interface StockData {
   Ticker: string;
@@ -90,6 +91,13 @@ const safeFloat = (v: any): number | null => {
   return isNaN(num) ? null : num;
 };
 
+const nowMs = (): number => {
+  if (typeof performance !== "undefined" && typeof performance.now === "function") {
+    return performance.now();
+  }
+  return Date.now();
+};
+
 const isIndividualCompanyResult = (row: any): boolean => {
   const instrumentType = String(row?.type || "").toUpperCase().trim();
   if (instrumentType !== "CS") return false;
@@ -141,24 +149,60 @@ export const fetchStockData = async (
   ticker: string,
   customStartDate?: Date,
   customEndDate?: Date,
-  startPriceCache?: Record<string, { prices: Record<string, number> }>
+  startPriceCache?: Record<string, { prices: Record<string, number> }>,
+  options?: { includeReference?: boolean; signal?: AbortSignal }
 ): Promise<StockData> => {
+  const t0 = nowMs();
+  let refMs = 0;
+  let aggsMs = 0;
   try {
+    const includeReference = options?.includeReference ?? true;
+    const signal = options?.signal;
     let marketCap: number | null = null;
     let industry: string | null = null;
 
     // Get reference data
-    const ref = await fetchTickerReference(ticker);
-    if (ref) {
-      marketCap = ref.market_cap;
-      industry = ref.industry;
+    if (includeReference) {
+      const refStart = nowMs();
+      const ref = await fetchTickerReference(ticker, signal);
+      refMs = nowMs() - refStart;
+      if (ref) {
+        marketCap = ref.market_cap;
+        industry = ref.industry;
+      }
     }
 
-    let changePct: number | null = null;
+    let dailyChangePct: number | null = null;
+    let customDatesChangePct: number | null = null;
     let startingPrice: number | null = null;
     let currentPrice: number | null = null;
     let volume: number | null = null;
     const useCustomRange = customStartDate && customEndDate;
+
+    // Daily path is independent from custom range and should always represent
+    // recent day-over-day movement.
+    const fromDate = new Date();
+    fromDate.setDate(fromDate.getDate() - 7);
+    const dailyAggsStart = nowMs();
+    const dailyAggs = await polygonGet(
+      `/v2/aggs/ticker/${ticker}/range/1/day/${toIso(fromDate)}/${toIso(new Date())}`,
+      { adjusted: "true", sort: "asc", limit: 5000 },
+      20,
+      4,
+      signal
+    );
+    aggsMs += nowMs() - dailyAggsStart;
+    const dailyRows = dailyAggs?.results || [];
+    const dailyLastClose = dailyRows.length >= 1 ? safeFloat(dailyRows[dailyRows.length - 1].c) : null;
+    const dailyPrevClose = dailyRows.length >= 2
+      ? safeFloat(dailyRows[dailyRows.length - 2].c)
+      : dailyRows.length >= 1
+        ? safeFloat(dailyRows[dailyRows.length - 1].o)
+        : null;
+    const dailyVolume = dailyRows.length >= 1 ? safeFloat(dailyRows[dailyRows.length - 1].v) : null;
+    if (dailyPrevClose && dailyPrevClose !== 0 && dailyLastClose !== null) {
+      dailyChangePct = ((dailyLastClose - dailyPrevClose) / dailyPrevClose) * 100;
+    }
 
     // Custom range path
     if (useCustomRange && customStartDate && customEndDate) {
@@ -175,10 +219,15 @@ export const fetchStockData = async (
         // Fetch first open on or after start date
         const toDate = new Date(customStartDate);
         toDate.setDate(toDate.getDate() + 14);
+        const aggsStart = nowMs();
         const aggs = await polygonGet(
           `/v2/aggs/ticker/${ticker}/range/1/day/${toIso(customStartDate)}/${toIso(toDate)}`,
-          { adjusted: "true", sort: "asc", limit: 50 }
+          { adjusted: "true", sort: "asc", limit: 50 },
+          20,
+          4,
+          signal
         );
+        aggsMs += nowMs() - aggsStart;
         const rows = aggs?.results || [];
         if (rows.length > 0) {
           startingPrice = safeFloat(rows[0].o);
@@ -188,10 +237,15 @@ export const fetchStockData = async (
       // Fetch last close on or before end date
       const fromDate = new Date(customEndDate);
       fromDate.setDate(fromDate.getDate() - 14);
+      const aggsStart = nowMs();
       const aggs = await polygonGet(
         `/v2/aggs/ticker/${ticker}/range/1/day/${toIso(fromDate)}/${toIso(customEndDate)}`,
-        { adjusted: "true", sort: "asc", limit: 50 }
+        { adjusted: "true", sort: "asc", limit: 50 },
+        20,
+        4,
+        signal
       );
+      aggsMs += nowMs() - aggsStart;
       const rows = aggs?.results || [];
       if (rows.length > 0) {
         const last = rows[rows.length - 1];
@@ -200,28 +254,22 @@ export const fetchStockData = async (
       }
 
       if (startingPrice && startingPrice !== 0 && currentPrice !== null) {
-        changePct = ((currentPrice - startingPrice) / startingPrice) * 100;
+        customDatesChangePct = ((currentPrice - startingPrice) / startingPrice) * 100;
       }
     } else {
-      const fromDate = new Date();
-      fromDate.setDate(fromDate.getDate() - 7);
-      const aggs = await polygonGet(
-        `/v2/aggs/ticker/${ticker}/range/1/day/${toIso(fromDate)}/${toIso(new Date())}`,
-        { adjusted: "true", sort: "asc", limit: 5000 }
-      );
-      const rows = aggs?.results || [];
-      if (rows.length >= 1) {
-        const lastClose = safeFloat(rows[rows.length - 1].c);
-        const prevClose = rows.length >= 2
-          ? safeFloat(rows[rows.length - 2].c)
-          : safeFloat(rows[rows.length - 1].o);
-        if (prevClose && prevClose !== 0 && lastClose !== null) {
-          changePct = ((lastClose - prevClose) / prevClose) * 100;
-        }
-        startingPrice = prevClose;
-        currentPrice = lastClose;
-        volume = safeFloat(rows[rows.length - 1].v);
-      }
+      startingPrice = dailyPrevClose;
+      currentPrice = dailyLastClose;
+      volume = dailyVolume;
+    }
+
+    if (LOG_REFRESH_SPEED) {
+      const totalMs = nowMs() - t0;
+      console.log({
+        ticker,
+        refMs,
+        aggsMs,
+        totalMs,
+      });
     }
 
     return {
@@ -229,13 +277,22 @@ export const fetchStockData = async (
       "Starting Price": startingPrice,
       "Current Price": currentPrice,
       "Market Cap": marketCap,
-      "Daily Stock Change %": changePct,
-      "Custom Dates Change %": useCustomRange ? changePct : null,
+      "Daily Stock Change %": dailyChangePct,
+      "Custom Dates Change %": useCustomRange ? customDatesChangePct : null,
       Volume: volume,
       Industry: industry,
       Error: null,
     };
   } catch (err: any) {
+    if (LOG_REFRESH_SPEED) {
+      const totalMs = nowMs() - t0;
+      console.log({
+        ticker,
+        refMs,
+        aggsMs,
+        totalMs,
+      });
+    }
     return {
       Ticker: ticker,
       "Starting Price": null,

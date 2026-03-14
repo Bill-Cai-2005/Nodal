@@ -22,6 +22,10 @@ const CustomWatchlistsTable = ({
   setSortAscending,
 }: Props) => {
   if (data.length === 0) return null;
+  const formatVolume = (value: number | null): string => {
+    if (value === null) return "N/A";
+    return Math.round(value).toLocaleString();
+  };
 
   const sortedData = isAdmin
     ? [...data].sort((a, b) => {
@@ -106,7 +110,7 @@ const CustomWatchlistsTable = ({
                     : "N/A"}
                 </td>
               )}
-              <td style={{ padding: "0.75rem" }}>{formatValue(row.Volume)}</td>
+              <td style={{ padding: "0.75rem" }}>{formatVolume(row.Volume)}</td>
               <td style={{ padding: "0.75rem" }}>{row.Industry || "N/A"}</td>
             </tr>
           ))}

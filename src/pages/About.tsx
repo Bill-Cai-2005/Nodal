@@ -117,7 +117,7 @@ const About = () => {
             As Marble grows, the focus is shifting more towards professionalism.
           </p>
           <p style={paragraphStyle} className="about-paragraph founder-note">
-            Nodal returns to the roots, uncovering the ideas that drive the market.
+            Nodal is a return to my roots.
           </p>
         </div>
         <div

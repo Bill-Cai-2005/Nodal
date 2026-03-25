@@ -42,7 +42,7 @@ const UniversalWatchlist = () => {
       try {
         const cached = await loadUniversalTableFromIndexedDb();
         if (!cached || !Array.isArray(cached.rows) || cached.rows.length === 0) return;
-        setData(cached.rows as StockData[]);
+        setData(cached.rows as unknown as StockData[]);
         setTickers(cached.tickers || { nyse: [], nasdaq: [] });
         setLastRefreshedAt(cached.updatedAt || null);
         setProgress({ current: 0, total: 0, message: "Loaded locally stored market data." });
@@ -273,7 +273,7 @@ const UniversalWatchlist = () => {
             "Custom Dates Change %": null,
             Volume: null,
             Industry: null,
-            Error: existing ? existing.Error : null,
+            Error: null,
           }),
           "Starting Price": prevClose,
           "Current Price": currentPrice,

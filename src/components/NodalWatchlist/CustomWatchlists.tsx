@@ -14,6 +14,7 @@ import {
   loadCustomWatchlistsFromDb,
   saveCustomWatchlistToDb,
 } from "../../utils/watchlistCacheApi";
+import { runWithConcurrency } from "../../utils/concurrency";
 import CustomWatchlistsTable from "./CustomWatchlistsTable";
 
 const CustomWatchlists = () => {
@@ -218,45 +219,141 @@ const CustomWatchlists = () => {
 
       let completed = 0;
       const nextData: Record<string, StockData[]> = { ...watchlistData };
-
+      const existingByWatchlistAndTicker: Record<string, Record<string, StockData>> = {};
       for (const watchlistName of watchlistNames) {
-        const tickers = watchlists[watchlistName] || [];
-        const results: StockData[] = [];
-
-        for (const ticker of tickers) {
-          completed += 1;
+        existingByWatchlistAndTicker[watchlistName] = Object.fromEntries(
+          (watchlistData[watchlistName] || []).map((row) => [row.Ticker, row])
+        );
+      }
+      const tasks = watchlistNames.flatMap((watchlistName) =>
+        (watchlists[watchlistName] || []).map((ticker) => ({ watchlistName, ticker }))
+      );
+      const rowsByWatchlistAndTicker: Record<string, Record<string, StockData>> = {};
+      await runWithConcurrency(tasks, 24, async ({ watchlistName, ticker }) => {
+        const fetched = await fetchStockData(
+          ticker,
+          undefined,
+          undefined
+        );
+        const existing = existingByWatchlistAndTicker[watchlistName]?.[ticker];
+        const row: StockData = {
+          ...fetched,
+          // Refresh should never compute or overwrite custom-range data.
+          "Custom Dates Change %": existing?.["Custom Dates Change %"] ?? null,
+        };
+        if (!rowsByWatchlistAndTicker[watchlistName]) rowsByWatchlistAndTicker[watchlistName] = {};
+        rowsByWatchlistAndTicker[watchlistName][ticker] = row;
+        completed += 1;
+        if (completed % 10 === 0 || completed === totalTickers) {
           setProgress({
             current: completed,
             total: totalTickers,
-            message: `Processing ${watchlistName}: ${ticker}...`,
+            message: `Refreshing watchlists (${completed}/${totalTickers})...`,
           });
-
-          results.push(
-            await fetchStockData(
-              ticker,
-              useCustomRange ? customStart : undefined,
-              useCustomRange ? customEnd : undefined
-            )
-          );
         }
+      });
 
+      for (const watchlistName of watchlistNames) {
+        const tickers = watchlists[watchlistName] || [];
+        const results = tickers
+          .map((ticker) => rowsByWatchlistAndTicker[watchlistName]?.[ticker])
+          .filter(Boolean) as StockData[];
         nextData[watchlistName] = results;
-        try {
-          await saveCustomWatchlistToDb(
-            watchlistName,
-            watchlists[watchlistName] || [],
-            results,
-            new Date().toISOString()
-          );
-        } catch (e: any) {
-          alert(`Refreshed locally for "${watchlistName}" but failed to save refreshed data to DB: ${e.message}`);
-        }
       }
+
+      await Promise.all(
+        watchlistNames.map(async (watchlistName) => {
+          try {
+            await saveCustomWatchlistToDb(
+              watchlistName,
+              watchlists[watchlistName] || [],
+              nextData[watchlistName] || [],
+              new Date().toISOString()
+            );
+          } catch (e: any) {
+            alert(`Refreshed locally for "${watchlistName}" but failed to save refreshed data to DB: ${e.message}`);
+          }
+        })
+      );
 
       setWatchlistData(nextData);
       setProgress({ current: 0, total: 0, message: "Refresh complete." });
     } catch (err: any) {
       alert(`Error: ${err.message}`);
+    } finally {
+      setLoadingAll(false);
+    }
+  };
+
+  const handleLoadHistoricalData = async () => {
+    if (!useCustomRange) {
+      alert("Enable 'Use Custom Time Range' first.");
+      return;
+    }
+    const watchlistNames = Object.keys(watchlists);
+    const hasMarketData = watchlistNames.some((name) => (watchlistData[name] || []).length > 0);
+    if (!hasMarketData) {
+      alert("Refresh watchlists first to load market data.");
+      return;
+    }
+
+    const existingByWatchlistAndTicker: Record<string, Record<string, StockData>> = {};
+    for (const watchlistName of watchlistNames) {
+      existingByWatchlistAndTicker[watchlistName] = Object.fromEntries(
+        (watchlistData[watchlistName] || []).map((row) => [row.Ticker, row])
+      );
+    }
+
+    const tasks = watchlistNames.flatMap((watchlistName) =>
+      (watchlists[watchlistName] || [])
+        .filter((ticker) => Boolean(existingByWatchlistAndTicker[watchlistName]?.[ticker]))
+        .map((ticker) => ({ watchlistName, ticker }))
+    );
+
+    if (tasks.length === 0) {
+      setProgress({ current: 0, total: 0, message: "No market rows available to load historical data." });
+      return;
+    }
+
+    try {
+      setLoadingAll(true);
+      setProgress({ current: 0, total: tasks.length, message: "Loading historical data for missing tickers..." });
+      let completed = 0;
+      const customByWatchlistAndTicker: Record<string, Record<string, number | null>> = {};
+
+      await runWithConcurrency(tasks, 24, async ({ watchlistName, ticker }) => {
+        const row = await fetchStockData(ticker, customStart, customEnd, undefined, { includeReference: false });
+        if (!customByWatchlistAndTicker[watchlistName]) customByWatchlistAndTicker[watchlistName] = {};
+        customByWatchlistAndTicker[watchlistName][ticker] = row["Custom Dates Change %"];
+        completed += 1;
+        if (completed % 10 === 0 || completed === tasks.length) {
+          setProgress({
+            current: completed,
+            total: tasks.length,
+            message: "Loading historical data for missing tickers...",
+          });
+        }
+      });
+
+      setWatchlistData((prev) => {
+        const next: Record<string, StockData[]> = { ...prev };
+        for (const watchlistName of watchlistNames) {
+          next[watchlistName] = (prev[watchlistName] || []).map((row) => {
+            const value = customByWatchlistAndTicker[watchlistName]?.[row.Ticker];
+            if (value === undefined) return row;
+            return {
+              ...row,
+              "Custom Dates Change %": value,
+            };
+          });
+        }
+        return next;
+      });
+
+      // Intentionally do not persist historical/custom-range data.
+      setProgress({ current: 0, total: 0, message: "Historical data loaded." });
+    } catch (err: any) {
+      alert(`Error loading historical data: ${err.message}`);
     } finally {
       setLoadingAll(false);
     }
@@ -272,6 +369,7 @@ const CustomWatchlists = () => {
   };
 
   const watchlistNames = Object.keys(watchlists);
+  const hasMarketData = watchlistNames.some((name) => (watchlistData[name] || []).length > 0);
 
   return (
     <div style={{ width: "100%" }}>
@@ -297,32 +395,52 @@ const CustomWatchlists = () => {
           </button>
         </div>
 
-        <div style={{ display: "flex", gap: "1rem", alignItems: "center", justifyContent: "center", flexWrap: "wrap", marginBottom: "1rem" }}>
-          <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <input
-              type="checkbox"
-              checked={useCustomRange}
-              onChange={(e) => setUseCustomRange(e.target.checked)}
-            />
-            Use Custom Time Range
-          </label>
-          {useCustomRange && (
-            <>
+        {hasMarketData && (
+          <div style={{ display: "flex", gap: "1rem", alignItems: "center", justifyContent: "center", flexWrap: "wrap", marginBottom: "1rem" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
               <input
-                type="date"
-                value={customStart.toISOString().split("T")[0]}
-                onChange={(e) => setCustomStart(new Date(e.target.value))}
-                style={{ padding: "0.5rem", borderRadius: "4px", border: "1px solid #ccc" }}
+                type="checkbox"
+                checked={useCustomRange}
+                onChange={(e) => setUseCustomRange(e.target.checked)}
               />
-              <input
-                type="date"
-                value={customEnd.toISOString().split("T")[0]}
-                onChange={(e) => setCustomEnd(new Date(e.target.value))}
-                style={{ padding: "0.5rem", borderRadius: "4px", border: "1px solid #ccc" }}
-              />
-            </>
-          )}
-        </div>
+              Use Custom Time Range
+            </label>
+            {useCustomRange && (
+              <>
+                <input
+                  type="date"
+                  value={customStart.toISOString().split("T")[0]}
+                  onChange={(e) => setCustomStart(new Date(e.target.value))}
+                  style={{ padding: "0.5rem", borderRadius: "4px", border: "1px solid #ccc" }}
+                />
+                <input
+                  type="date"
+                  value={customEnd.toISOString().split("T")[0]}
+                  onChange={(e) => setCustomEnd(new Date(e.target.value))}
+                  style={{ padding: "0.5rem", borderRadius: "4px", border: "1px solid #ccc" }}
+                />
+                <button
+                  type="button"
+                  onClick={handleLoadHistoricalData}
+                  disabled={loadingAll || Boolean(validatingWatchlist)}
+                  style={{
+                    padding: "0.65rem 1rem",
+                    backgroundColor: "#000000",
+                    color: "#ffffff",
+                    border: "none",
+                    borderRadius: "6px",
+                    cursor: loadingAll || validatingWatchlist ? "not-allowed" : "pointer",
+                    fontSize: "0.85rem",
+                    fontWeight: 600,
+                    opacity: loadingAll || validatingWatchlist ? 0.6 : 1,
+                  }}
+                >
+                  Load Historical Data
+                </button>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {progress.message && (

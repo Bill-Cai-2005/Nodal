@@ -6,7 +6,7 @@ import {
   fetchTickerReference,
   type StockData,
 } from "../../utils/polygonApi";
-import { loadMarketCapsFromIndexedDb, replaceMarketCapsInIndexedDb } from "../../utils/marketCapIndexedDb";
+import { loadUniversalTableFromIndexedDb, replaceUniversalTableInIndexedDb } from "../../utils/marketCapIndexedDb";
 import { runWithConcurrency } from "../../utils/concurrency";
 import { fetchCompanySummary } from "../../utils/companySummaryApi";
 import UniversalWatchlistControls from "./UniversalWatchlistControls";
@@ -23,6 +23,7 @@ const UniversalWatchlist = () => {
   const [sortColumn, setSortColumn] = useState<string>("");
   const [sortAscending, setSortAscending] = useState(true);
   const [minMarketCap, setMinMarketCap] = useState(0);
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<string | null>(null);
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
   const [summaryText, setSummaryText] = useState("");
   const [summaryLoading, setSummaryLoading] = useState(false);
@@ -36,7 +37,22 @@ const UniversalWatchlist = () => {
     }
   }, [useCustomRange, sortColumn]);
 
-  const handleLoadTickers = async () => {
+  useEffect(() => {
+    (async () => {
+      try {
+        const cached = await loadUniversalTableFromIndexedDb();
+        if (!cached || !Array.isArray(cached.rows) || cached.rows.length === 0) return;
+        setData(cached.rows as StockData[]);
+        setTickers(cached.tickers || { nyse: [], nasdaq: [] });
+        setLastRefreshedAt(cached.updatedAt || null);
+        setProgress({ current: 0, total: 0, message: "Loaded locally stored market data." });
+      } catch (e) {
+        console.warn("Failed to load cached universal table:", e);
+      }
+    })();
+  }, []);
+
+  const fetchAndSetTickers = async (): Promise<{ nyse: string[]; nasdaq: string[] }> => {
     try {
       setLoading(true);
       setProgress({ current: 0, total: 0, message: "Fetching tickers..." });
@@ -44,63 +60,18 @@ const UniversalWatchlist = () => {
         setProgress({ current, total, message: `Fetched ${current} tickers...` });
       });
       setTickers(result);
-
-      const allTickers = [...result.nyse, ...result.nasdaq];
-      if (allTickers.length > 0) {
-        setProgress({ current: 0, total: allTickers.length, message: "Fetching snapshot batches..." });
-        const snapshots = await fetchSnapshotBatch(allTickers);
-        const rows: StockData[] = allTickers.map((ticker, idx) => {
-          if ((idx + 1) % 250 === 0 || idx + 1 === allTickers.length) {
-            setProgress({
-              current: idx + 1,
-              total: allTickers.length,
-              message: "Building table from snapshots...",
-            });
-          }
-
-          const snap = snapshots[ticker];
-          const day = snap?.day || {};
-          const prevDay = snap?.prevDay || {};
-          const lastTrade = snap?.lastTrade || {};
-          const prevClose = prevDay.c ? parseFloat(prevDay.c) : null;
-          const currentPrice = lastTrade.p ? parseFloat(lastTrade.p) : day.c ? parseFloat(day.c) : null;
-          const volume = day.v ? parseFloat(day.v) : null;
-
-          let dailyChange: number | null = null;
-          if (prevClose !== null && prevClose !== 0 && currentPrice !== null) {
-            dailyChange = ((currentPrice - prevClose) / prevClose) * 100;
-          }
-
-          return {
-            Ticker: ticker,
-            "Starting Price": prevClose,
-            "Current Price": currentPrice,
-            "Market Cap": null,
-            "Daily Stock Change %": dailyChange,
-            "Custom Dates Change %": null,
-            Volume: volume,
-            Industry: null,
-            Error: snap ? null : "Missing snapshot",
-          };
-        });
-        setData(rows);
-      }
-
-      setProgress({ current: 0, total: 0, message: `Loaded ${allTickers.length} tickers and table snapshot` });
+      return result;
     } catch (err: any) {
       alert(`Error: ${err.message}`);
+      throw err;
     } finally {
       setLoading(false);
     }
   };
 
-  const handleRefresh = async () => {
-    const allTickers = [...tickers.nyse, ...tickers.nasdaq];
-    if (allTickers.length === 0) {
-      alert("Please fetch tickers first");
-      return;
-    }
-
+  const refreshFromTickers = async (nextTickers: { nyse: string[]; nasdaq: string[] }) => {
+    const allTickers = [...nextTickers.nyse, ...nextTickers.nasdaq];
+    if (allTickers.length === 0) return;
     try {
       setLoading(true);
       abortRef.current?.abort();
@@ -120,16 +91,15 @@ const UniversalWatchlist = () => {
           existing["Starting Price"] === null ||
           existing["Current Price"] === null ||
           existing["Daily Stock Change %"] === null ||
-          existing.Volume === null ||
-          (useCustomRange && existing["Custom Dates Change %"] === null);
+          existing.Volume === null;
 
         if (!needsMarket && !needsPrice && existing) {
           byTicker[ticker] = existing;
         } else if (needsPrice) {
           const fetched = await fetchStockData(
             ticker,
-            useCustomRange ? customStart : undefined,
-            useCustomRange ? customEnd : undefined,
+            undefined,
+            undefined,
             undefined,
             { includeReference: needsMarket, signal: controller.signal }
           );
@@ -137,6 +107,8 @@ const UniversalWatchlist = () => {
             ...fetched,
             "Market Cap": needsMarket ? fetched["Market Cap"] : (existing?.["Market Cap"] ?? fetched["Market Cap"]),
             Industry: needsMarket ? fetched.Industry : (existing?.Industry ?? fetched.Industry),
+            // Refresh should never compute or overwrite custom-range data.
+            "Custom Dates Change %": existing?.["Custom Dates Change %"] ?? null,
           };
         } else if (existing) {
           const ref = await fetchTickerReference(ticker, controller.signal);
@@ -144,6 +116,7 @@ const UniversalWatchlist = () => {
             ...existing,
             "Market Cap": ref?.market_cap ?? existing["Market Cap"],
             Industry: ref?.industry ?? existing.Industry,
+            "Custom Dates Change %": existing["Custom Dates Change %"] ?? null,
           };
         }
 
@@ -160,24 +133,27 @@ const UniversalWatchlist = () => {
       }
 
       const refreshedRows = allTickers.map(
-        (ticker) =>
-          byTicker[ticker] || {
+        (ticker) => {
+          const existing = existingByTicker[ticker] as StockData | undefined;
+          return byTicker[ticker] || {
             Ticker: ticker,
             "Starting Price": null,
             "Current Price": null,
             "Market Cap": null,
             "Daily Stock Change %": null,
-            "Custom Dates Change %": null,
+            "Custom Dates Change %": existing?.["Custom Dates Change %"] ?? null,
             Volume: null,
             Industry: null,
             Error: "Missing data",
-          }
+          };
+        }
       );
       setData(refreshedRows);
       try {
-        await replaceMarketCapsInIndexedDb(refreshedRows);
+        await replaceUniversalTableInIndexedDb(refreshedRows as unknown as Array<Record<string, unknown>>, nextTickers);
+        setLastRefreshedAt(new Date().toISOString());
       } catch (e) {
-        console.warn("Failed to persist market caps to IndexedDB:", e);
+        console.warn("Failed to persist universal table to IndexedDB:", e);
       }
       setProgress({ current: 0, total: 0, message: "Refresh complete!" });
     } catch (err: any) {
@@ -191,23 +167,133 @@ const UniversalWatchlist = () => {
     }
   };
 
-  const handleLoadLocallyStoredData = async () => {
+  const handleLoadMarketData = async () => {
     try {
-      const marketCaps = await loadMarketCapsFromIndexedDb();
-      if (Object.keys(marketCaps).length === 0) {
-        alert("No locally stored market cap data found.");
-        return;
+      let nextTickers = tickers;
+      if (nextTickers.nyse.length + nextTickers.nasdaq.length === 0) {
+        nextTickers = await fetchAndSetTickers();
       }
+      await refreshFromTickers(nextTickers);
+    } catch {
+      // Errors are already surfaced in fetch/refresh helpers.
+    }
+  };
 
+  const handleLoadHistoricalData = async () => {
+    if (!useCustomRange) {
+      alert("Enable 'Use Custom Time Range' first.");
+      return;
+    }
+    if (data.length === 0) {
+      alert("Load market data first.");
+      return;
+    }
+    const missing = data.filter((row) => row["Custom Dates Change %"] === null).map((row) => row.Ticker);
+    if (missing.length === 0) {
+      setProgress({ current: 0, total: 0, message: "No missing historical data to load." });
+      return;
+    }
+    try {
+      setLoading(true);
+      setProgress({ current: 0, total: missing.length, message: "Loading historical data for missing tickers..." });
+      let completed = 0;
+      const fetched = await runWithConcurrency(missing, 24, async (ticker) => {
+        const row = await fetchStockData(ticker, customStart, customEnd, undefined, { includeReference: false });
+        completed += 1;
+        if (completed % 10 === 0 || completed === missing.length) {
+          setProgress({
+            current: completed,
+            total: missing.length,
+            message: "Loading historical data for missing tickers...",
+          });
+        }
+        return [ticker, row] as const;
+      });
+      const byTicker = Object.fromEntries(fetched);
       setData((prev) =>
-        prev.map((row) => ({
-          ...row,
-          "Market Cap": marketCaps[row.Ticker] ?? row["Market Cap"],
-        }))
+        prev.map((row) => {
+          const updated = byTicker[row.Ticker];
+          if (!updated) return row;
+          return {
+            ...row,
+            "Custom Dates Change %": updated["Custom Dates Change %"],
+            // Do not override other fields; we only fill historical-based metric
+          };
+        })
       );
-      setProgress({ current: 0, total: 0, message: "Loaded locally stored market cap data." });
-    } catch (e: any) {
-      alert(`Failed to load locally stored data: ${e?.message || "Unknown error"}`);
+      setProgress({ current: 0, total: 0, message: "Historical data loaded." });
+      // Intentionally do NOT update local cache
+    } catch (err: any) {
+      alert(`Failed to load historical data: ${err?.message || "Unknown error"}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleQuickRefresh = async () => {
+    const allTickers = [...tickers.nyse, ...tickers.nasdaq];
+    if (allTickers.length === 0 || data.length === 0) {
+      alert("Load market data first.");
+      return;
+    }
+    try {
+      setLoading(true);
+      setProgress({ current: 0, total: allTickers.length, message: "Quick refresh (snapshots)..." });
+      const snapshots = await fetchSnapshotBatch(allTickers);
+      let completed = 0;
+      const byTicker = Object.fromEntries(data.map((row) => [row.Ticker, row]));
+      const nextRows: StockData[] = allTickers.map((ticker, idx) => {
+        const existing = byTicker[ticker];
+        const snap = snapshots[ticker];
+        const day = snap?.day || {};
+        const prevDay = snap?.prevDay || {};
+        const lastTrade = snap?.lastTrade || {};
+        const prevClose = prevDay.c ? parseFloat(prevDay.c) : null;
+        const currentPrice = lastTrade.p ? parseFloat(lastTrade.p) : day.c ? parseFloat(day.c) : null;
+        const volume = day.v ? parseFloat(day.v) : null;
+        let dailyChange: number | null = null;
+        if (prevClose !== null && prevClose !== 0 && currentPrice !== null) {
+          dailyChange = ((currentPrice - prevClose) / prevClose) * 100;
+        }
+        if ((idx + 1) % 250 === 0 || idx + 1 === allTickers.length) {
+          completed = idx + 1;
+          setProgress({
+            current: completed,
+            total: allTickers.length,
+            message: "Quick refresh (snapshots)...",
+          });
+        }
+        return {
+          ...(existing || {
+            Ticker: ticker,
+            "Starting Price": null,
+            "Current Price": null,
+            "Market Cap": null,
+            "Daily Stock Change %": null,
+            "Custom Dates Change %": null,
+            Volume: null,
+            Industry: null,
+            Error: existing ? existing.Error : null,
+          }),
+          "Starting Price": prevClose,
+          "Current Price": currentPrice,
+          "Daily Stock Change %": dailyChange,
+          Volume: volume,
+          // Preserve Market Cap, Industry, Custom range
+        } as StockData;
+      });
+      setData(nextRows);
+      try {
+        await replaceUniversalTableInIndexedDb(nextRows as unknown as Array<Record<string, unknown>>, { nyse: tickers.nyse, nasdaq: tickers.nasdaq });
+        setLastRefreshedAt(new Date().toISOString());
+      } catch (e) {
+        console.warn("Failed to persist universal table to IndexedDB (quick):", e);
+      }
+      setProgress({ current: 0, total: 0, message: "Quick refresh complete!" });
+    } catch (err: any) {
+      alert(`Quick refresh failed: ${err?.message || "Unknown error"}`);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -278,6 +364,8 @@ const UniversalWatchlist = () => {
       <UniversalWatchlistControls
         loading={loading}
         progress={progress}
+        hasData={data.length > 0}
+        lastRefreshedAt={lastRefreshedAt}
         useCustomRange={useCustomRange}
         setUseCustomRange={setUseCustomRange}
         customStart={customStart}
@@ -286,9 +374,9 @@ const UniversalWatchlist = () => {
         setCustomEnd={setCustomEnd}
         minMarketCap={minMarketCap}
         setMinMarketCap={setMinMarketCap}
-        onLoadTickers={handleLoadTickers}
-        onLoadLocallyStoredData={handleLoadLocallyStoredData}
-        onRefresh={handleRefresh}
+        onLoadMarketData={handleLoadMarketData}
+        onLoadHistoricalData={handleLoadHistoricalData}
+        onQuickRefresh={handleQuickRefresh}
       />
 
       <UniversalWatchlistTable

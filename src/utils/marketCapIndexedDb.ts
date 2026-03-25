@@ -1,11 +1,12 @@
-type MarketCapRecord = {
-  ticker: string;
-  marketCap: number;
+type UniversalTableCacheRecord = {
+  id: "universal_table_cache";
+  rows: Array<Record<string, unknown>>;
+  tickers: { nyse: string[]; nasdaq: string[] };
   updatedAt: string;
 };
 
 const DB_NAME = "nodal_market_cap_db";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_NAME = "market_caps";
 
 const openMarketCapDb = (): Promise<IDBDatabase> =>
@@ -14,9 +15,10 @@ const openMarketCapDb = (): Promise<IDBDatabase> =>
 
     request.onupgradeneeded = () => {
       const db = request.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: "ticker" });
+      if (db.objectStoreNames.contains(STORE_NAME)) {
+        db.deleteObjectStore(STORE_NAME);
       }
+      db.createObjectStore(STORE_NAME, { keyPath: "id" });
     };
 
     request.onsuccess = () => resolve(request.result);
@@ -29,26 +31,23 @@ const runRequest = (request: IDBRequest): Promise<void> =>
     request.onerror = () => reject(request.error || new Error("IndexedDB request failed"));
   });
 
-export const replaceMarketCapsInIndexedDb = async (rows: Array<{ Ticker: string; "Market Cap": number | null }>) => {
+export const replaceUniversalTableInIndexedDb = async (
+  rows: Array<Record<string, unknown>>,
+  tickers: { nyse: string[]; nasdaq: string[] }
+) => {
   if (typeof indexedDB === "undefined") return;
 
   const db = await openMarketCapDb();
   try {
     const tx = db.transaction(STORE_NAME, "readwrite");
     const store = tx.objectStore(STORE_NAME);
-
-    await runRequest(store.clear());
-
-    const updatedAt = new Date().toISOString();
-    for (const row of rows) {
-      if (row["Market Cap"] === null) continue;
-      const record: MarketCapRecord = {
-        ticker: row.Ticker,
-        marketCap: row["Market Cap"],
-        updatedAt,
-      };
-      await runRequest(store.put(record));
-    }
+    const record: UniversalTableCacheRecord = {
+      id: "universal_table_cache",
+      rows,
+      tickers,
+      updatedAt: new Date().toISOString(),
+    };
+    await runRequest(store.put(record));
 
     await new Promise<void>((resolve, reject) => {
       tx.oncomplete = () => resolve();
@@ -60,21 +59,19 @@ export const replaceMarketCapsInIndexedDb = async (rows: Array<{ Ticker: string;
   }
 };
 
-export const loadMarketCapsFromIndexedDb = async (): Promise<Record<string, number>> => {
-  if (typeof indexedDB === "undefined") return {};
+export const loadUniversalTableFromIndexedDb = async (): Promise<UniversalTableCacheRecord | null> => {
+  if (typeof indexedDB === "undefined") return null;
 
   const db = await openMarketCapDb();
   try {
     const tx = db.transaction(STORE_NAME, "readonly");
     const store = tx.objectStore(STORE_NAME);
-
-    const records = await new Promise<MarketCapRecord[]>((resolve, reject) => {
-      const request = store.getAll();
-      request.onsuccess = () => resolve((request.result || []) as MarketCapRecord[]);
-      request.onerror = () => reject(request.error || new Error("Failed to read IndexedDB market caps"));
+    const record = await new Promise<UniversalTableCacheRecord | null>((resolve, reject) => {
+      const request = store.get("universal_table_cache");
+      request.onsuccess = () => resolve((request.result || null) as UniversalTableCacheRecord | null);
+      request.onerror = () => reject(request.error || new Error("Failed to read IndexedDB universal table cache"));
     });
-
-    return Object.fromEntries(records.map((r) => [r.ticker, r.marketCap]));
+    return record;
   } finally {
     db.close();
   }

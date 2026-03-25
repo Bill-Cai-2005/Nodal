@@ -9,6 +9,8 @@ type ProgressState = {
 type Props = {
   loading: boolean;
   progress: ProgressState;
+  hasData: boolean;
+  lastRefreshedAt: string | null;
   useCustomRange: boolean;
   setUseCustomRange: (value: boolean) => void;
   customStart: Date;
@@ -17,14 +19,16 @@ type Props = {
   setCustomEnd: (date: Date) => void;
   minMarketCap: number;
   setMinMarketCap: (value: number) => void;
-  onLoadTickers: () => void;
-  onLoadLocallyStoredData: () => void;
-  onRefresh: () => void;
+  onLoadMarketData: () => void;
+  onLoadHistoricalData: () => void;
+  onQuickRefresh: () => void;
 };
 
 const UniversalWatchlistControls = ({
   loading,
   progress,
+  hasData,
+  lastRefreshedAt,
   useCustomRange,
   setUseCustomRange,
   customStart,
@@ -33,9 +37,9 @@ const UniversalWatchlistControls = ({
   setCustomEnd,
   minMarketCap,
   setMinMarketCap,
-  onLoadTickers,
-  onLoadLocallyStoredData,
-  onRefresh,
+  onLoadMarketData,
+  onLoadHistoricalData,
+  onQuickRefresh,
 }: Props) => {
   const [minMarketCapInput, setMinMarketCapInput] = useState(String(minMarketCap));
 
@@ -65,8 +69,8 @@ const UniversalWatchlistControls = ({
     <>
       <div style={{ marginBottom: "1rem" }}>
         <div style={{ display: "flex", gap: "1rem", justifyContent: "center", flexWrap: "wrap", marginBottom: "1rem" }}>
-        <button
-            onClick={onLoadTickers}
+          <button
+            onClick={onLoadMarketData}
           disabled={loading}
           style={{
             padding: "0.75rem 1.5rem",
@@ -80,71 +84,81 @@ const UniversalWatchlistControls = ({
             opacity: loading ? 0.6 : 1,
           }}
         >
-            Load Tickers
-        </button>
-          <button
-            onClick={onLoadLocallyStoredData}
-            disabled={loading}
-            style={{
-              padding: "0.75rem 1.5rem",
-              backgroundColor: "#000000",
-              color: "#ffffff",
-              border: "none",
-              borderRadius: "6px",
-              cursor: loading ? "not-allowed" : "pointer",
-              fontSize: "0.875rem",
-              fontWeight: 600,
-              opacity: loading ? 0.6 : 1,
-            }}
-          >
-            Load Locally Stored Data
+          {hasData ? "Full Refresh" : "Load Market Data"}
           </button>
+          {hasData && (
             <button
-            onClick={onRefresh}
-          disabled={loading}
-          style={{
-            padding: "0.75rem 1.5rem",
-            backgroundColor: "#8B0000",
-            color: "#ffffff",
-            border: "none",
-            borderRadius: "6px",
-            cursor: loading ? "not-allowed" : "pointer",
-            fontSize: "0.875rem",
-            fontWeight: 600,
-            opacity: loading ? 0.6 : 1,
-          }}
-        >
-            Refresh
-        </button>
-      </div>
-
-        <div style={{ display: "flex", gap: "1rem", alignItems: "center", justifyContent: "center", flexWrap: "wrap", marginBottom: "1rem" }}>
-          <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <input
-              type="checkbox"
-              checked={useCustomRange}
-              onChange={(e) => setUseCustomRange(e.target.checked)}
-            />
-            Use Custom Time Range
-          </label>
-
-          {useCustomRange && (
-            <>
-              <input
-                type="date"
-                value={customStart.toISOString().split("T")[0]}
-                onChange={(e) => setCustomStart(new Date(e.target.value))}
-                style={{ padding: "0.5rem", borderRadius: "4px", border: "1px solid #ccc" }}
-              />
-              <input
-                type="date"
-                value={customEnd.toISOString().split("T")[0]}
-                onChange={(e) => setCustomEnd(new Date(e.target.value))}
-                style={{ padding: "0.5rem", borderRadius: "4px", border: "1px solid #ccc" }}
-              />
-            </>
+              onClick={onQuickRefresh}
+              disabled={loading}
+              style={{
+                padding: "0.75rem 1.5rem",
+                backgroundColor: "#000000",
+                color: "#ffffff",
+                border: "none",
+                borderRadius: "6px",
+                cursor: loading ? "not-allowed" : "pointer",
+                fontSize: "0.875rem",
+                fontWeight: 600,
+                opacity: loading ? 0.6 : 1,
+              }}
+            >
+              Quick Refresh
+            </button>
           )}
         </div>
+        {lastRefreshedAt && (
+          <div style={{ textAlign: "center", marginBottom: "1rem", color: "#374151", fontSize: "0.9rem" }}>
+            Last refreshed: {new Date(lastRefreshedAt).toLocaleString()}
+          </div>
+        )}
+
+        {hasData && (
+          <div style={{ display: "flex", gap: "1rem", alignItems: "center", justifyContent: "center", flexWrap: "wrap", marginBottom: "1rem" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <input
+                type="checkbox"
+                checked={useCustomRange}
+                onChange={(e) => setUseCustomRange(e.target.checked)}
+              />
+              Use Custom Time Range
+            </label>
+
+            {useCustomRange && (
+              <>
+                <input
+                  type="date"
+                  value={customStart.toISOString().split("T")[0]}
+                  onChange={(e) => setCustomStart(new Date(e.target.value))}
+                  style={{ padding: "0.5rem", borderRadius: "4px", border: "1px solid #ccc" }}
+                />
+                <input
+                  type="date"
+                  value={customEnd.toISOString().split("T")[0]}
+                  onChange={(e) => setCustomEnd(new Date(e.target.value))}
+                  style={{ padding: "0.5rem", borderRadius: "4px", border: "1px solid #ccc" }}
+                />
+                <button
+                  type="button"
+                  onClick={onLoadHistoricalData}
+                  disabled={loading}
+                  style={{
+                    padding: "0.5rem 1rem",
+                    backgroundColor: "#000000",
+                    color: "#ffffff",
+                    border: "none",
+                    borderRadius: "6px",
+                    cursor: loading ? "not-allowed" : "pointer",
+                    fontSize: "0.85rem",
+                    fontWeight: 600,
+                    opacity: loading ? 0.6 : 1,
+                  }}
+                >
+                  Load Historical Data
+                </button>
+              </>
+            )}
+          </div>
+        )}
 
         <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", justifyContent: "center" }}>
           Min Market Cap (Millions USD):

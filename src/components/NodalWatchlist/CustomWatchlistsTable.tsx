@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import type { StockData } from "../../utils/polygonApi";
 
 type Props = {
@@ -9,6 +10,14 @@ type Props = {
   setSortColumn?: (value: string) => void;
   sortAscending?: boolean;
   setSortAscending?: (value: boolean) => void;
+  expandedByTicker?: Record<string, boolean>;
+  editingByTicker?: Record<string, boolean>;
+  draftDescriptionByTicker?: Record<string, string>;
+  onToggleTickerExpand?: (ticker: string) => void;
+  onStartEditDescription?: (ticker: string) => void;
+  onCancelEditDescription?: (ticker: string) => void;
+  onDraftDescriptionChange?: (ticker: string, value: string) => void;
+  onSaveDescription?: (ticker: string, value: string) => void;
 };
 
 const CustomWatchlistsTable = ({
@@ -20,6 +29,14 @@ const CustomWatchlistsTable = ({
   setSortColumn,
   sortAscending = true,
   setSortAscending,
+  expandedByTicker = {},
+  editingByTicker = {},
+  draftDescriptionByTicker = {},
+  onToggleTickerExpand,
+  onStartEditDescription,
+  onCancelEditDescription,
+  onDraftDescriptionChange,
+  onSaveDescription,
 }: Props) => {
   if (data.length === 0) return null;
   const formatVolume = (value: number | null): string => {
@@ -41,7 +58,6 @@ const CustomWatchlistsTable = ({
 
   const columns = [
     "Ticker",
-    "Description",
     "Starting Price",
     "Current Price",
     "Market Cap",
@@ -90,32 +106,93 @@ const CustomWatchlistsTable = ({
           </tr>
         </thead>
         <tbody>
-          {sortedData.map((row, idx) => (
-            <tr key={idx} style={{ borderBottom: "1px solid #e2e8f0" }}>
-              <td style={{ padding: "0.75rem" }}>{row.Ticker}</td>
-              <td style={{ padding: "0.75rem" }}>{(row as any).Description || ""}</td>
-              <td style={{ padding: "0.75rem" }}>{formatValue(row["Starting Price"])}</td>
-              <td style={{ padding: "0.75rem" }}>{formatValue(row["Current Price"])}</td>
-              <td style={{ padding: "0.75rem" }}>{formatValue(row["Market Cap"])}</td>
-              <td style={{ padding: "0.75rem", color: (row["Daily Stock Change %"] || 0) >= 0 ? "#008000" : "#dc2626" }}>
-                {row["Daily Stock Change %"] !== null ? `${row["Daily Stock Change %"].toFixed(2)}%` : "N/A"}
-              </td>
-              {showCustomDatesChange && (
-                <td
-                  style={{
-                    padding: "0.75rem",
-                    color: (row["Custom Dates Change %"] || 0) >= 0 ? "#008000" : "#dc2626",
-                  }}
+          {sortedData.map((row, idx) => {
+            const ticker = row.Ticker;
+            const isExpanded = expandedByTicker[ticker] ?? false;
+            const isEditing = editingByTicker[ticker] ?? false;
+            const liveDescription = (row as any).Description || "";
+            const draftDescription = draftDescriptionByTicker[ticker] ?? liveDescription;
+            return (
+              <Fragment key={`${ticker}-${idx}`}>
+                <tr
+                  style={{ borderBottom: "1px solid #e2e8f0", cursor: "pointer" }}
+                  onClick={() => onToggleTickerExpand?.(ticker)}
                 >
-                  {row["Custom Dates Change %"] !== null
-                    ? `${row["Custom Dates Change %"].toFixed(2)}%`
-                    : "N/A"}
-                </td>
-              )}
-              <td style={{ padding: "0.75rem" }}>{formatVolume(row.Volume)}</td>
-              <td style={{ padding: "0.75rem" }}>{row.Industry || "N/A"}</td>
-            </tr>
-          ))}
+                  <td style={{ padding: "0.75rem" }}>{row.Ticker}</td>
+                  <td style={{ padding: "0.75rem" }}>{formatValue(row["Starting Price"])}</td>
+                  <td style={{ padding: "0.75rem" }}>{formatValue(row["Current Price"])}</td>
+                  <td style={{ padding: "0.75rem" }}>{formatValue(row["Market Cap"])}</td>
+                  <td style={{ padding: "0.75rem", color: (row["Daily Stock Change %"] || 0) >= 0 ? "#008000" : "#dc2626" }}>
+                    {row["Daily Stock Change %"] !== null ? `${row["Daily Stock Change %"].toFixed(2)}%` : "N/A"}
+                  </td>
+                  {showCustomDatesChange && (
+                    <td
+                      style={{
+                        padding: "0.75rem",
+                        color: (row["Custom Dates Change %"] || 0) >= 0 ? "#008000" : "#dc2626",
+                      }}
+                    >
+                      {row["Custom Dates Change %"] !== null
+                        ? `${row["Custom Dates Change %"].toFixed(2)}%`
+                        : "N/A"}
+                    </td>
+                  )}
+                  <td style={{ padding: "0.75rem" }}>{formatVolume(row.Volume)}</td>
+                  <td style={{ padding: "0.75rem" }}>{row.Industry || "N/A"}</td>
+                </tr>
+                {isExpanded && (
+                  <tr>
+                    <td colSpan={columns.length} style={{ padding: "0.75rem", background: "#f9fafb", borderBottom: "1px solid #e2e8f0" }}>
+                      {!isEditing ? (
+                        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
+                          <div style={{ color: "#374151", whiteSpace: "pre-wrap", flex: 1 }}>
+                            {liveDescription || "No description"}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => onStartEditDescription?.(ticker)}
+                            style={{ padding: "0.5rem 0.8rem", borderRadius: "6px", border: "1px solid #d1d5db", background: "#ffffff", cursor: "pointer" }}
+                          >
+                            {liveDescription ? "Edit Description" : "Add Description"}
+                          </button>
+                        </div>
+                      ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", width: "100%" }}>
+                          <textarea
+                            value={draftDescription}
+                            onChange={(e) => onDraftDescriptionChange?.(ticker, e.target.value)}
+                            onInput={(e) => {
+                              const target = e.currentTarget;
+                              target.style.height = "auto";
+                              target.style.height = `${target.scrollHeight}px`;
+                            }}
+                            rows={3}
+                            style={{ width: "100%", minHeight: "84px", padding: "0.6rem", borderRadius: "6px", border: "1px solid #d1d5db", resize: "vertical" }}
+                          />
+                          <div style={{ display: "flex", gap: "0.5rem" }}>
+                            <button
+                              type="button"
+                              onClick={() => onSaveDescription?.(ticker, draftDescription)}
+                              style={{ padding: "0.5rem 0.8rem", borderRadius: "6px", border: "none", background: "#000000", color: "#ffffff", cursor: "pointer" }}
+                            >
+                              Save
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onCancelEditDescription?.(ticker)}
+                              style={{ padding: "0.5rem 0.8rem", borderRadius: "6px", border: "none", background: "#6b7280", color: "#ffffff", cursor: "pointer" }}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            );
+          })}
         </tbody>
       </table>
     </div>

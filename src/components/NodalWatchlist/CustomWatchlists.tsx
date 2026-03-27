@@ -28,6 +28,14 @@ const removeKeys = <T extends Record<string, any>>(source: T, keys: string[]): T
   return Object.fromEntries(Object.entries(source).filter(([key]) => !keySet.has(key))) as T;
 };
 
+const renameKey = <T extends Record<string, any>>(source: T, fromKey: string, toKey: string): T => {
+  if (!Object.prototype.hasOwnProperty.call(source, fromKey) || fromKey === toKey) return source;
+  const next = { ...source } as T;
+  (next as any)[toKey] = (next as any)[fromKey];
+  delete (next as any)[fromKey];
+  return next;
+};
+
 const iconButtonBaseStyle: CSSProperties = {
   width: "28px",
   height: "28px",
@@ -83,6 +91,20 @@ const CustomWatchlists = () => {
   const [dragOverWatchlistName, setDragOverWatchlistName] = useState<string | null>(null);
   const [draggedCategoryName, setDraggedCategoryName] = useState<string | null>(null);
   const [dragOverCategoryName, setDragOverCategoryName] = useState<string | null>(null);
+  const [popupMessage, setPopupMessage] = useState<string | null>(null);
+  const [categoryRenameByName, setCategoryRenameByName] = useState<Record<string, string>>({});
+  const [editingCategoryByName, setEditingCategoryByName] = useState<Record<string, boolean>>({});
+  const [watchlistNameDraftByName, setWatchlistNameDraftByName] = useState<Record<string, string>>({});
+  const [editingWatchlistNameByName, setEditingWatchlistNameByName] = useState<Record<string, boolean>>({});
+  const [watchlistDescriptionDraftByName, setWatchlistDescriptionDraftByName] = useState<Record<string, string>>({});
+  const [editingWatchlistDescriptionByName, setEditingWatchlistDescriptionByName] = useState<Record<string, boolean>>({});
+  const [expandedStockByWatchlist, setExpandedStockByWatchlist] = useState<Record<string, Record<string, boolean>>>({});
+  const [editingStockByWatchlist, setEditingStockByWatchlist] = useState<Record<string, Record<string, boolean>>>({});
+  const [stockDescriptionDraftByWatchlist, setStockDescriptionDraftByWatchlist] = useState<
+    Record<string, Record<string, string>>
+  >({});
+
+  const showPopup = (message: string) => setPopupMessage(message);
 
   useEffect(() => {
     (async () => {
@@ -120,6 +142,10 @@ const CustomWatchlists = () => {
           setWatchlists(watchlistsMap);
           setWatchlistOrder(orderedNames);
           setWatchlistDescriptionByName(watchlistDescriptions);
+          setWatchlistNameDraftByName(
+            Object.fromEntries(Object.keys(watchlistsMap).map((name) => [name, name]))
+          );
+          setWatchlistDescriptionDraftByName(watchlistDescriptions);
           setWatchlistCategoryByName(watchlistCategories);
           setCategoryOrder(orderedCategories);
           setExpandedByCategory(Object.fromEntries(orderedCategories.map((category) => [category, true])));
@@ -135,6 +161,8 @@ const CustomWatchlists = () => {
       const loaded = loadWatchlists();
       setWatchlists(loaded);
       setWatchlistOrder(Object.keys(loaded));
+      setWatchlistNameDraftByName(Object.fromEntries(Object.keys(loaded).map((name) => [name, name])));
+      setWatchlistDescriptionDraftByName(Object.fromEntries(Object.keys(loaded).map((name) => [name, ""])));
       setWatchlistCategoryByName({});
       setExpandedByCategory({});
     })();
@@ -179,11 +207,11 @@ const CustomWatchlists = () => {
   const handleCreateWatchlist = async (categoryName: string) => {
     const name = (newWatchlistNameByCategory[categoryName] || "").trim();
     if (!name) {
-      alert("Please enter a watchlist name");
+      showPopup("Please enter a watchlist name");
       return;
     }
     if (watchlists[name]) {
-      alert("Watchlist already exists");
+      showPopup("Watchlist already exists");
       return;
     }
     const updated = { ...watchlists, [name]: [] };
@@ -191,6 +219,9 @@ const CustomWatchlists = () => {
     setWatchlists(updated);
     setWatchlistOrder(nextOrder);
     setWatchlistDescriptionByName((prev) => ({ ...prev, [name]: "" }));
+    setWatchlistNameDraftByName((prev) => ({ ...prev, [name]: name }));
+    setEditingWatchlistNameByName((prev) => ({ ...prev, [name]: false }));
+    setWatchlistDescriptionDraftByName((prev) => ({ ...prev, [name]: "" }));
     setWatchlistCategoryByName((prev) => ({ ...prev, [name]: categoryName }));
     setStockDescriptionsByWatchlist((prev) => ({ ...prev, [name]: {} }));
     saveWatchlists(updated);
@@ -207,18 +238,18 @@ const CustomWatchlists = () => {
         stockDescriptions: {},
       });
     } catch (e: any) {
-      alert(`Created locally but failed to save watchlist to DB: ${e.message}`);
+      showPopup(`Created locally but failed to save watchlist to DB: ${e.message}`);
     }
   };
 
   const handleCreateCategory = async () => {
     const name = newCategoryName.trim();
     if (!name) {
-      alert("Please enter a category name");
+      showPopup("Please enter a category name");
       return;
     }
     if (name === UNCATEGORIZED || categoryOrder.includes(name)) {
-      alert("Category already exists");
+      showPopup("Category already exists");
       return;
     }
     const nextOrder = [...categoryOrder, name];
@@ -229,7 +260,7 @@ const CustomWatchlists = () => {
     try {
       await saveCustomWatchlistCategoryToDb(name, nextOrder.length - 1);
     } catch (e: any) {
-      alert(`Created category locally but failed to sync DB: ${e.message}`);
+      showPopup(`Created category locally but failed to sync DB: ${e.message}`);
     }
   };
 
@@ -241,7 +272,14 @@ const CustomWatchlists = () => {
     const nextWatchlists = removeKeys({ ...watchlists }, affectedWatchlists);
     const nextWatchlistData = removeKeys({ ...watchlistData }, affectedWatchlists);
     const nextDescriptions = removeKeys({ ...watchlistDescriptionByName }, affectedWatchlists);
+    const nextNameDrafts = removeKeys({ ...watchlistNameDraftByName }, affectedWatchlists);
+    const nextNameEditing = removeKeys({ ...editingWatchlistNameByName }, affectedWatchlists);
+    const nextDescriptionDrafts = removeKeys({ ...watchlistDescriptionDraftByName }, affectedWatchlists);
+    const nextDescriptionEditing = removeKeys({ ...editingWatchlistDescriptionByName }, affectedWatchlists);
     const nextStockDescriptions = removeKeys({ ...stockDescriptionsByWatchlist }, affectedWatchlists);
+    const nextExpandedStockByWatchlist = removeKeys({ ...expandedStockByWatchlist }, affectedWatchlists);
+    const nextEditingStockByWatchlist = removeKeys({ ...editingStockByWatchlist }, affectedWatchlists);
+    const nextStockDescriptionDraftByWatchlist = removeKeys({ ...stockDescriptionDraftByWatchlist }, affectedWatchlists);
     const nextExpandedByWatchlist = removeKeys({ ...expandedByWatchlist }, affectedWatchlists);
     const nextEditModeByWatchlist = removeKeys({ ...editModeByWatchlist }, affectedWatchlists);
     const nextSortColumnByWatchlist = removeKeys({ ...sortColumnByWatchlist }, affectedWatchlists);
@@ -254,7 +292,14 @@ const CustomWatchlists = () => {
     saveWatchlists(nextWatchlists);
     setWatchlistData(nextWatchlistData);
     setWatchlistDescriptionByName(nextDescriptions);
+    setWatchlistNameDraftByName(nextNameDrafts);
+    setEditingWatchlistNameByName(nextNameEditing);
+    setWatchlistDescriptionDraftByName(nextDescriptionDrafts);
+    setEditingWatchlistDescriptionByName(nextDescriptionEditing);
     setStockDescriptionsByWatchlist(nextStockDescriptions);
+    setExpandedStockByWatchlist(nextExpandedStockByWatchlist);
+    setEditingStockByWatchlist(nextEditingStockByWatchlist);
+    setStockDescriptionDraftByWatchlist(nextStockDescriptionDraftByWatchlist);
     setExpandedByWatchlist(nextExpandedByWatchlist);
     setEditModeByWatchlist(nextEditModeByWatchlist);
     setSortColumnByWatchlist(nextSortColumnByWatchlist);
@@ -268,22 +313,42 @@ const CustomWatchlists = () => {
       delete next[category];
       return next;
     });
+    setShowCreateWatchlistByCategory((prev) => {
+      const next = { ...prev };
+      delete next[category];
+      return next;
+    });
+    setNewWatchlistNameByCategory((prev) => {
+      const next = { ...prev };
+      delete next[category];
+      return next;
+    });
+    setEditingCategoryByName((prev) => {
+      const next = { ...prev };
+      delete next[category];
+      return next;
+    });
+    setCategoryRenameByName((prev) => {
+      const next = { ...prev };
+      delete next[category];
+      return next;
+    });
     try {
       await deleteCustomWatchlistCategoryFromDb(category);
     } catch (e: any) {
-      alert(`Deleted category locally but failed to sync DB: ${e.message}`);
+      showPopup(`Deleted category locally but failed to sync DB: ${e.message}`);
     }
   };
 
   const handleAddTicker = async (watchlistName: string) => {
     const inputTicker = (newTickerByWatchlist[watchlistName] || "").trim();
     if (!inputTicker) {
-      alert("Please enter a ticker");
+      showPopup("Please enter a ticker");
       return;
     }
     const ticker = inputTicker.toUpperCase();
     if ((watchlists[watchlistName] || []).includes(ticker)) {
-      alert(`${ticker} already in watchlist`);
+      showPopup(`${ticker} already in watchlist`);
       return;
     }
 
@@ -292,7 +357,7 @@ const CustomWatchlists = () => {
       setProgress({ current: 0, total: 0, message: `Validating ${ticker}...` });
       const validation = await validateTicker(ticker);
       if (!validation.valid) {
-        alert(validation.reason || "Invalid ticker");
+        showPopup(validation.reason || "Invalid ticker");
         return;
       }
       const updated = {
@@ -312,10 +377,10 @@ const CustomWatchlists = () => {
           stockDescriptions: nextStockDescriptions,
         });
       } catch (e: any) {
-        alert(`Added locally but failed to sync DB: ${e.message}`);
+        showPopup(`Added locally but failed to sync DB: ${e.message}`);
       }
     } catch (err: any) {
-      alert(`Error: ${err.message}`);
+      showPopup(`Error: ${err.message}`);
     } finally {
       setValidatingWatchlist(null);
     }
@@ -339,7 +404,7 @@ const CustomWatchlists = () => {
         stockDescriptions: nextStockDescriptions,
       });
     } catch (e: any) {
-      alert(`Removed locally but failed to sync DB: ${e.message}`);
+      showPopup(`Removed locally but failed to sync DB: ${e.message}`);
     }
   };
 
@@ -352,7 +417,7 @@ const CustomWatchlists = () => {
         )
       );
     } catch (e: any) {
-      alert(`Order changed locally but failed to sync DB: ${e.message}`);
+      showPopup(`Order changed locally but failed to sync DB: ${e.message}`);
     }
   };
 
@@ -361,7 +426,7 @@ const CustomWatchlists = () => {
     try {
       await Promise.all(nextOrder.map((name, index) => saveCustomWatchlistCategoryToDb(name, index)));
     } catch (e: any) {
-      alert(`Category order changed locally but failed to sync DB: ${e.message}`);
+      showPopup(`Category order changed locally but failed to sync DB: ${e.message}`);
     }
   };
 
@@ -463,6 +528,69 @@ const CustomWatchlists = () => {
     setDragOverCategoryName(null);
   };
 
+  const handleStartEditCategoryName = (category: string) => {
+    setCategoryRenameByName((prev) => ({ ...prev, [category]: category }));
+    setEditingCategoryByName((prev) => ({ ...prev, [category]: true }));
+  };
+
+  const handleSaveCategoryName = async (oldCategory: string) => {
+    const renamed = (categoryRenameByName[oldCategory] || "").trim();
+    if (!renamed) {
+      showPopup("Category name cannot be empty.");
+      return;
+    }
+    if (renamed === oldCategory) {
+      setEditingCategoryByName((prev) => ({ ...prev, [oldCategory]: false }));
+      return;
+    }
+    if (categoryOrder.includes(renamed)) {
+      showPopup("Category already exists.");
+      return;
+    }
+
+    const nextCategoryOrder = categoryOrder.map((name) => (name === oldCategory ? renamed : name));
+    const nextWatchlistCategoryByName = Object.fromEntries(
+      Object.entries(watchlistCategoryByName).map(([watchlistName, category]) => [
+        watchlistName,
+        category === oldCategory ? renamed : category,
+      ])
+    );
+
+    setCategoryOrder(nextCategoryOrder);
+    setWatchlistCategoryByName(nextWatchlistCategoryByName);
+    setExpandedByCategory((prev) => renameKey(prev, oldCategory, renamed));
+    setShowCreateWatchlistByCategory((prev) => renameKey(prev, oldCategory, renamed));
+    setNewWatchlistNameByCategory((prev) => renameKey(prev, oldCategory, renamed));
+    setEditingCategoryByName((prev) => {
+      const next = renameKey(prev, oldCategory, renamed);
+      next[renamed] = false;
+      return next;
+    });
+    setCategoryRenameByName((prev) => {
+      const next = renameKey(prev, oldCategory, renamed);
+      next[renamed] = renamed;
+      return next;
+    });
+
+    try {
+      const targetIndex = nextCategoryOrder.indexOf(renamed);
+      await saveCustomWatchlistCategoryToDb(renamed, targetIndex);
+      const watchlistsToMove = Object.keys(watchlists).filter(
+        (watchlistName) => watchlistCategoryByName[watchlistName] === oldCategory
+      );
+      await Promise.all(
+        watchlistsToMove.map((watchlistName) =>
+          saveWatchlist(watchlistName, watchlists[watchlistName] || [], watchlistData[watchlistName] || [], null, {
+            category: renamed,
+          })
+        )
+      );
+      await deleteCustomWatchlistCategoryFromDb(oldCategory);
+    } catch (e: any) {
+      showPopup(`Renamed locally but failed to sync category rename: ${e.message}`);
+    }
+  };
+
   const handleSaveWatchlistDescription = async (watchlistName: string) => {
     try {
       await saveWatchlist(
@@ -470,11 +598,85 @@ const CustomWatchlists = () => {
         watchlists[watchlistName] || [],
         watchlistData[watchlistName] || [],
         null,
-        { description: watchlistDescriptionByName[watchlistName] || "" }
+        { description: watchlistDescriptionDraftByName[watchlistName] || "" }
       );
+      setWatchlistDescriptionByName((prev) => ({
+        ...prev,
+        [watchlistName]: watchlistDescriptionDraftByName[watchlistName] || "",
+      }));
+      setEditingWatchlistDescriptionByName((prev) => ({ ...prev, [watchlistName]: false }));
     } catch (e: any) {
-      alert(`Saved locally but failed to sync watchlist description: ${e.message}`);
+      showPopup(`Saved locally but failed to sync watchlist description: ${e.message}`);
     }
+  };
+
+  const handleSaveWatchlistName = async (watchlistName: string) => {
+    const nextName = (watchlistNameDraftByName[watchlistName] ?? watchlistName).trim();
+    const currentDescription = watchlistDescriptionByName[watchlistName] || "";
+
+    if (!nextName) {
+      showPopup("Watchlist name cannot be empty.");
+      return;
+    }
+    if (nextName !== watchlistName && watchlists[nextName]) {
+      showPopup("A watchlist with that name already exists.");
+      return;
+    }
+
+    if (nextName !== watchlistName) {
+      const tickers = watchlists[watchlistName] || [];
+      const data = watchlistData[watchlistName] || [];
+      const category = watchlistCategoryByName[watchlistName] || "";
+      const order = Math.max(0, watchlistOrder.indexOf(watchlistName));
+      const stockDescriptions = stockDescriptionsByWatchlist[watchlistName] || {};
+
+      setWatchlists((prev) => {
+        const next = { ...prev };
+        delete next[watchlistName];
+        next[nextName] = tickers;
+        saveWatchlists(next);
+        return next;
+      });
+      setWatchlistData((prev) => renameKey(prev, watchlistName, nextName));
+      setWatchlistDescriptionByName((prev) => renameKey(prev, watchlistName, nextName));
+      setWatchlistNameDraftByName((prev) => ({
+        ...renameKey(prev, watchlistName, nextName),
+        [nextName]: nextName,
+      }));
+      setWatchlistDescriptionDraftByName((prev) => renameKey(prev, watchlistName, nextName));
+      setWatchlistCategoryByName((prev) => renameKey(prev, watchlistName, nextName));
+      setStockDescriptionsByWatchlist((prev) => renameKey(prev, watchlistName, nextName));
+      setExpandedByWatchlist((prev) => renameKey(prev, watchlistName, nextName));
+      setEditModeByWatchlist((prev) => {
+        const next = renameKey(prev, watchlistName, nextName);
+        next[nextName] = false;
+        return next;
+      });
+      setEditingWatchlistNameByName((prev) => renameKey(prev, watchlistName, nextName));
+      setEditingWatchlistDescriptionByName((prev) => renameKey(prev, watchlistName, nextName));
+      setSortColumnByWatchlist((prev) => renameKey(prev, watchlistName, nextName));
+      setSortAscendingByWatchlist((prev) => renameKey(prev, watchlistName, nextName));
+      setNewTickerByWatchlist((prev) => renameKey(prev, watchlistName, nextName));
+      setExpandedStockByWatchlist((prev) => renameKey(prev, watchlistName, nextName));
+      setEditingStockByWatchlist((prev) => renameKey(prev, watchlistName, nextName));
+      setStockDescriptionDraftByWatchlist((prev) => renameKey(prev, watchlistName, nextName));
+      setWatchlistOrder((prev) => prev.map((name) => (name === watchlistName ? nextName : name)));
+
+      try {
+        await saveCustomWatchlistToDb(nextName, tickers, data, null, {
+          description: currentDescription,
+          order,
+          category,
+          stockDescriptions,
+        });
+        await deleteCustomWatchlistFromDb(watchlistName);
+      } catch (e: any) {
+        showPopup(`Saved locally but failed to sync watchlist rename: ${e.message}`);
+      }
+      return;
+    }
+
+    setEditingWatchlistNameByName((prev) => ({ ...prev, [watchlistName]: false }));
   };
 
   const handleSaveStockDescription = async (watchlistName: string, ticker: string, description: string) => {
@@ -487,9 +689,64 @@ const CustomWatchlists = () => {
       await saveWatchlist(watchlistName, watchlists[watchlistName] || [], watchlistData[watchlistName] || [], null, {
         stockDescriptions: nextStockDescriptions,
       });
+      setEditingStockByWatchlist((prev) => ({
+        ...prev,
+        [watchlistName]: {
+          ...(prev[watchlistName] || {}),
+          [ticker]: false,
+        },
+      }));
     } catch (e: any) {
-      alert(`Saved locally but failed to sync stock description: ${e.message}`);
+      showPopup(`Saved locally but failed to sync stock description: ${e.message}`);
     }
+  };
+
+  const handleToggleStockRowExpand = (watchlistName: string, ticker: string) => {
+    setExpandedStockByWatchlist((prev) => ({
+      ...prev,
+      [watchlistName]: {
+        ...(prev[watchlistName] || {}),
+        [ticker]: !(prev[watchlistName]?.[ticker] ?? false),
+      },
+    }));
+  };
+
+  const handleStartEditStockDescription = (watchlistName: string, ticker: string) => {
+    const liveDescription = stockDescriptionsByWatchlist[watchlistName]?.[ticker] || "";
+    setStockDescriptionDraftByWatchlist((prev) => ({
+      ...prev,
+      [watchlistName]: {
+        ...(prev[watchlistName] || {}),
+        [ticker]: liveDescription,
+      },
+    }));
+    setEditingStockByWatchlist((prev) => ({
+      ...prev,
+      [watchlistName]: {
+        ...(prev[watchlistName] || {}),
+        [ticker]: true,
+      },
+    }));
+  };
+
+  const handleCancelEditStockDescription = (watchlistName: string, ticker: string) => {
+    setEditingStockByWatchlist((prev) => ({
+      ...prev,
+      [watchlistName]: {
+        ...(prev[watchlistName] || {}),
+        [ticker]: false,
+      },
+    }));
+  };
+
+  const handleDraftStockDescriptionChange = (watchlistName: string, ticker: string, value: string) => {
+    setStockDescriptionDraftByWatchlist((prev) => ({
+      ...prev,
+      [watchlistName]: {
+        ...(prev[watchlistName] || {}),
+        [ticker]: value,
+      },
+    }));
   };
 
   const handleDeleteWatchlist = async (watchlistName: string) => {
@@ -519,12 +776,47 @@ const CustomWatchlists = () => {
       delete next[watchlistName];
       return next;
     });
+    setWatchlistNameDraftByName((prev) => {
+      const next = { ...prev };
+      delete next[watchlistName];
+      return next;
+    });
+    setEditingWatchlistNameByName((prev) => {
+      const next = { ...prev };
+      delete next[watchlistName];
+      return next;
+    });
+    setWatchlistDescriptionDraftByName((prev) => {
+      const next = { ...prev };
+      delete next[watchlistName];
+      return next;
+    });
+    setEditingWatchlistDescriptionByName((prev) => {
+      const next = { ...prev };
+      delete next[watchlistName];
+      return next;
+    });
     setWatchlistCategoryByName((prev) => {
       const next = { ...prev };
       delete next[watchlistName];
       return next;
     });
     setStockDescriptionsByWatchlist((prev) => {
+      const next = { ...prev };
+      delete next[watchlistName];
+      return next;
+    });
+    setExpandedStockByWatchlist((prev) => {
+      const next = { ...prev };
+      delete next[watchlistName];
+      return next;
+    });
+    setEditingStockByWatchlist((prev) => {
+      const next = { ...prev };
+      delete next[watchlistName];
+      return next;
+    });
+    setStockDescriptionDraftByWatchlist((prev) => {
       const next = { ...prev };
       delete next[watchlistName];
       return next;
@@ -547,7 +839,7 @@ const CustomWatchlists = () => {
     try {
       await deleteCustomWatchlistFromDb(watchlistName);
     } catch (e: any) {
-      alert(`Deleted locally but failed to delete in DB: ${e.message}`);
+      showPopup(`Deleted locally but failed to delete in DB: ${e.message}`);
     }
   };
 
@@ -555,7 +847,7 @@ const CustomWatchlists = () => {
     const watchlistNames = Object.keys(watchlists);
     const totalTickers = watchlistNames.reduce((acc, name) => acc + (watchlists[name]?.length || 0), 0);
     if (totalTickers === 0) {
-      alert("No tickers available to refresh.");
+      showPopup("No tickers available to refresh.");
       return;
     }
 
@@ -623,7 +915,7 @@ const CustomWatchlists = () => {
               }
             );
           } catch (e: any) {
-            alert(`Refreshed locally for "${watchlistName}" but failed to save refreshed data to DB: ${e.message}`);
+            showPopup(`Refreshed locally for "${watchlistName}" but failed to save refreshed data to DB: ${e.message}`);
           }
         })
       );
@@ -631,7 +923,7 @@ const CustomWatchlists = () => {
       setWatchlistData(nextData);
       setProgress({ current: 0, total: 0, message: "Refresh complete." });
     } catch (err: any) {
-      alert(`Error: ${err.message}`);
+      showPopup(`Error: ${err.message}`);
     } finally {
       setLoadingAll(false);
     }
@@ -639,13 +931,13 @@ const CustomWatchlists = () => {
 
   const handleLoadHistoricalData = async () => {
     if (!useCustomRange) {
-      alert("Enable 'Use Custom Time Range' first.");
+      showPopup("Enable 'Use Custom Time Range' first.");
       return;
     }
     const watchlistNames = Object.keys(watchlists);
     const hasMarketData = watchlistNames.some((name) => (watchlistData[name] || []).length > 0);
     if (!hasMarketData) {
-      alert("Refresh watchlists first to load market data.");
+      showPopup("Refresh watchlists first to load market data.");
       return;
     }
 
@@ -705,7 +997,7 @@ const CustomWatchlists = () => {
       // Intentionally do not persist historical/custom-range data.
       setProgress({ current: 0, total: 0, message: "Historical data loaded." });
     } catch (err: any) {
-      alert(`Error loading historical data: ${err.message}`);
+      showPopup(`Error loading historical data: ${err.message}`);
     } finally {
       setLoadingAll(false);
     }
@@ -802,9 +1094,74 @@ const CustomWatchlists = () => {
       </div>
 
       {progress.message && (
-        <div style={{ marginBottom: "1rem", padding: "0.75rem", background: "#f0f0f0", borderRadius: "4px" }}>
-          {progress.message}
-          {progress.total > 0 && ` (${progress.current}/${progress.total})`}
+        <div
+          style={{
+            marginBottom: "1rem",
+            padding: "0.75rem",
+            background: "#f0f0f0",
+            borderRadius: "4px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "0.75rem",
+          }}
+        >
+          <span>
+            {progress.message}
+            {progress.total > 0 && ` (${progress.current}/${progress.total})`}
+          </span>
+          <button
+            type="button"
+            onClick={() => setProgress({ current: 0, total: 0, message: "" })}
+            style={{
+              ...iconButtonBaseStyle,
+              color: "#6b7280",
+              border: "1px solid #d1d5db",
+              fontSize: "1rem",
+            }}
+            aria-label="Dismiss status"
+            title="Dismiss status"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
+      {popupMessage && (
+        <div
+          style={{
+            position: "fixed",
+            top: "1rem",
+            right: "1rem",
+            zIndex: 1000,
+            maxWidth: "360px",
+            backgroundColor: "#111827",
+            color: "#ffffff",
+            borderRadius: "8px",
+            padding: "0.9rem",
+            boxShadow: "0 10px 25px rgba(0,0,0,0.2)",
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "space-between",
+            gap: "0.75rem",
+          }}
+        >
+          <div style={{ whiteSpace: "pre-wrap", fontSize: "0.9rem", lineHeight: 1.35 }}>{popupMessage}</div>
+          <button
+            type="button"
+            onClick={() => setPopupMessage(null)}
+            style={{
+              ...iconButtonBaseStyle,
+              color: "#d1d5db",
+              border: "1px solid #4b5563",
+              fontSize: "1rem",
+              flexShrink: 0,
+            }}
+            aria-label="Close message"
+            title="Close"
+          >
+            ×
+          </button>
         </div>
       )}
 
@@ -854,14 +1211,36 @@ const CustomWatchlists = () => {
               }}
             >
               <div>
-                <h2 style={{ fontFamily: "Montserrat, sans-serif", fontSize: "1.1rem", marginBottom: "0.25rem" }}>
-                  {category}
-                </h2>
-                <span style={{ fontSize: "0.85rem", color: "#666666" }}>{watchlistsInCategory.length} watchlists</span>
-              </div>
-
-              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-                {!showCreateWatchlistByCategory[category] ? (
+                {editingCategoryByName[category] ? (
+                  <div style={{ display: "flex", gap: "0.4rem", alignItems: "center", flexWrap: "wrap", marginBottom: "0.25rem" }}>
+                    <input
+                      type="text"
+                      value={categoryRenameByName[category] || ""}
+                      onChange={(e) =>
+                        setCategoryRenameByName((prev) => ({ ...prev, [category]: e.target.value }))
+                      }
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          void handleSaveCategoryName(category);
+                        }
+                      }}
+                      style={{ padding: "0.35rem 0.5rem", borderRadius: "4px", border: "1px solid #ccc", minWidth: "180px" }}
+                    />
+                  </div>
+                ) : (
+                  <h2
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleStartEditCategoryName(category);
+                    }}
+                    style={{ fontFamily: "Montserrat, sans-serif", fontSize: "1.1rem", marginBottom: "0.25rem" }}
+                  >
+                    {category}
+                  </h2>
+                )}
+                {isCategoryExpanded && (
                   <button
                     type="button"
                     onClick={(e) => {
@@ -869,36 +1248,24 @@ const CustomWatchlists = () => {
                       setShowCreateWatchlistByCategory((prev) => ({ ...prev, [category]: true }));
                     }}
                     style={{
-                      ...iconButtonBaseStyle,
+                      marginTop: "0.35rem",
+                      padding: "0.5rem 0.8rem",
+                      background: "#ffffff",
                       color: "#374151",
                       border: "1px solid #d1d5db",
-                      fontSize: "1rem",
+                      borderRadius: "6px",
+                      cursor: "pointer",
+                      fontSize: "0.85rem",
+                      fontWeight: 500,
                     }}
-                    title="Create watchlist"
-                    aria-label="Create watchlist"
                   >
-                    +
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setShowCreateWatchlistByCategory((prev) => ({ ...prev, [category]: false }));
-                      setNewWatchlistNameByCategory((prev) => ({ ...prev, [category]: "" }));
-                    }}
-                    style={{
-                      ...iconButtonBaseStyle,
-                      color: "#6b7280",
-                      border: "1px solid #d1d5db",
-                      fontSize: "1rem",
-                    }}
-                    title="Cancel create"
-                    aria-label="Cancel create"
-                  >
-                    -
+                    Create Watchlist
                   </button>
                 )}
+              </div>
+
+              {isCategoryExpanded && (
+              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
                 <button
                   type="button"
                   onClick={(e) => {
@@ -917,6 +1284,7 @@ const CustomWatchlists = () => {
                   ×
                 </button>
               </div>
+              )}
             </div>
 
             {isCategoryExpanded && (
@@ -1001,24 +1369,51 @@ const CustomWatchlists = () => {
                           cursor: "pointer",
                         }}
                       >
-                        <div>
-                          <h2 style={{ fontFamily: "Montserrat, sans-serif", fontSize: "1.2rem", marginBottom: "0.25rem" }}>
-                            {watchlistName}
-                          </h2>
-                          <span style={{ fontSize: "0.85rem", color: "#666666" }}>{tickers.length} tickers</span>
-                          {(watchlistDescriptionByName[watchlistName] || "").trim() && (
-                            <div style={{ fontSize: "0.85rem", color: "#4b5563", marginTop: "0.35rem" }}>
-                              {watchlistDescriptionByName[watchlistName]}
-                            </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                          {editingWatchlistNameByName[watchlistName] ? (
+                            <input
+                              type="text"
+                              value={watchlistNameDraftByName[watchlistName] ?? watchlistName}
+                              onChange={(e) =>
+                                setWatchlistNameDraftByName((prev) => ({
+                                  ...prev,
+                                  [watchlistName]: e.target.value,
+                                }))
+                              }
+                              onClick={(e) => e.stopPropagation()}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  void handleSaveWatchlistName(watchlistName);
+                                }
+                              }}
+                              style={{ padding: "0.35rem 0.5rem", borderRadius: "4px", border: "1px solid #ccc", minWidth: "220px" }}
+                            />
+                          ) : (
+                            <h2
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setWatchlistNameDraftByName((prev) => ({ ...prev, [watchlistName]: watchlistName }));
+                                setEditingWatchlistNameByName((prev) => ({ ...prev, [watchlistName]: true }));
+                              }}
+                              style={{ fontFamily: "Montserrat, sans-serif", fontSize: "1.2rem", marginBottom: "0.25rem" }}
+                            >
+                              {watchlistName}
+                            </h2>
                           )}
                         </div>
 
+                        {isExpanded && (
                         <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              setEditModeByWatchlist((prev) => ({ ...prev, [watchlistName]: !isEditing }));
+                              if (isEditing) {
+                                setEditModeByWatchlist((prev) => ({ ...prev, [watchlistName]: false }));
+                              } else {
+                                setEditModeByWatchlist((prev) => ({ ...prev, [watchlistName]: true }));
+                              }
                             }}
                             style={{
                               ...iconButtonBaseStyle,
@@ -1053,6 +1448,59 @@ const CustomWatchlists = () => {
                             ×
                           </button>
                         </div>
+                        )}
+
+                        {isExpanded && (
+                        <div style={{ width: "100%", marginTop: "0.5rem", display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+                          <div style={{ flex: 1, minWidth: "260px" }}>
+                            {!editingWatchlistDescriptionByName[watchlistName] ? (
+                              <div
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setWatchlistDescriptionDraftByName((prev) => ({
+                                    ...prev,
+                                    [watchlistName]: watchlistDescriptionByName[watchlistName] || "",
+                                  }));
+                                  setEditingWatchlistDescriptionByName((prev) => ({ ...prev, [watchlistName]: true }));
+                                }}
+                                style={{
+                                  color: "#374151",
+                                  whiteSpace: "pre-wrap",
+                                  flex: 1,
+                                  fontSize: "0.9rem",
+                                  cursor: "text",
+                                }}
+                              >
+                                <div>
+                                  {(watchlistDescriptionByName[watchlistName] || "").trim() || "No description"}
+                                </div>
+                              </div>
+                            ) : (
+                              <input
+                                type="text"
+                                value={watchlistDescriptionDraftByName[watchlistName] || ""}
+                                onChange={(e) =>
+                                  setWatchlistDescriptionDraftByName((prev) => ({
+                                    ...prev,
+                                    [watchlistName]: e.target.value,
+                                  }))
+                                }
+                                onClick={(e) => e.stopPropagation()}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    e.preventDefault();
+                                    void handleSaveWatchlistDescription(watchlistName);
+                                  }
+                                }}
+                                onBlur={() => {
+                                  void handleSaveWatchlistDescription(watchlistName);
+                                }}
+                                style={{ width: "100%", minHeight: "42px", padding: "0.45rem 0.55rem", borderRadius: "4px", border: "1px solid #ccc" }}
+                              />
+                            )}
+                          </div>
+                        </div>
+                        )}
                       </div>
 
                       {isExpanded && (
@@ -1067,39 +1515,6 @@ const CustomWatchlists = () => {
                                 backgroundColor: "#fafafa",
                               }}
                             >
-                              <div style={{ marginBottom: "0.75rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-                                <input
-                                  type="text"
-                                  value={watchlistDescriptionByName[watchlistName] || ""}
-                                  onChange={(e) =>
-                                    setWatchlistDescriptionByName((prev) => ({
-                                      ...prev,
-                                      [watchlistName]: e.target.value,
-                                    }))
-                                  }
-                                  placeholder="Watchlist Description"
-                                  style={{ padding: "0.65rem", borderRadius: "4px", border: "1px solid #ccc", minWidth: "280px" }}
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => handleSaveWatchlistDescription(watchlistName)}
-                                  disabled={isBusy}
-                                  style={{
-                                    padding: "0.65rem 1rem",
-                                    backgroundColor: "#000000",
-                                    color: "#ffffff",
-                                    border: "none",
-                                    borderRadius: "6px",
-                                    cursor: isBusy ? "not-allowed" : "pointer",
-                                    fontSize: "0.85rem",
-                                    fontWeight: 600,
-                                    opacity: isBusy ? 0.6 : 1,
-                                  }}
-                                >
-                                  Save Description
-                                </button>
-                              </div>
-
                               <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.75rem", flexWrap: "wrap" }}>
                                 <input
                                   type="text"
@@ -1153,37 +1568,6 @@ const CustomWatchlists = () => {
                                     }}
                                   >
                                     <span>{ticker}</span>
-                                    <input
-                                      type="text"
-                                      value={stockDescriptionsByWatchlist[watchlistName]?.[ticker] || ""}
-                                      onChange={(e) =>
-                                        setStockDescriptionsByWatchlist((prev) => ({
-                                          ...prev,
-                                          [watchlistName]: {
-                                            ...(prev[watchlistName] || {}),
-                                            [ticker]: e.target.value,
-                                          },
-                                        }))
-                                      }
-                                      onBlur={(e) => handleSaveStockDescription(watchlistName, ticker, e.target.value)}
-                                      onKeyDown={(e) => {
-                                        if (e.key === "Enter") {
-                                          e.preventDefault();
-                                          handleSaveStockDescription(
-                                            watchlistName,
-                                            ticker,
-                                            (e.currentTarget as HTMLInputElement).value
-                                          );
-                                        }
-                                      }}
-                                      placeholder="Stock description"
-                                      style={{
-                                        padding: "0.35rem 0.5rem",
-                                        borderRadius: "4px",
-                                        border: "1px solid #d1d5db",
-                                        minWidth: "180px",
-                                      }}
-                                    />
                                     <button
                                       type="button"
                                       onClick={() => handleRemoveTicker(watchlistName, ticker)}
@@ -1220,6 +1604,18 @@ const CustomWatchlists = () => {
                             formatValue={formatValue}
                             isAdmin={true}
                             showCustomDatesChange={useCustomRange}
+                            expandedByTicker={expandedStockByWatchlist[watchlistName] || {}}
+                            editingByTicker={editingStockByWatchlist[watchlistName] || {}}
+                            draftDescriptionByTicker={stockDescriptionDraftByWatchlist[watchlistName] || {}}
+                            onToggleTickerExpand={(ticker) => handleToggleStockRowExpand(watchlistName, ticker)}
+                            onStartEditDescription={(ticker) => handleStartEditStockDescription(watchlistName, ticker)}
+                            onCancelEditDescription={(ticker) => handleCancelEditStockDescription(watchlistName, ticker)}
+                            onDraftDescriptionChange={(ticker, value) =>
+                              handleDraftStockDescriptionChange(watchlistName, ticker, value)
+                            }
+                            onSaveDescription={(ticker, value) =>
+                              void handleSaveStockDescription(watchlistName, ticker, value)
+                            }
                           />
                         </>
                       )}

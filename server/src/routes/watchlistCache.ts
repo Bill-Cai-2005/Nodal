@@ -3,18 +3,84 @@ import connectDB from "../utils/connectDB.js";
 import StartPriceCache from "../models/StartPriceCache.js";
 import MarketCapSnapshot from "../models/MarketCapSnapshot.js";
 import CustomWatchlist from "../models/CustomWatchlist.js";
+import CustomWatchlistCategory from "../models/CustomWatchlistCategory.js";
 
 const router = express.Router();
+const UNCATEGORIZED = "Uncategorized";
+
+// GET /api/watchlist-cache/custom-watchlist-categories
+router.get("/custom-watchlist-categories", async (_req: Request, res: Response) => {
+  try {
+    await connectDB();
+    const docs = await CustomWatchlistCategory.find({}).sort({ order: 1, name: 1 });
+    return res.json({
+      categories: docs.map((d: any) => ({
+        name: d.name,
+        order: Number.isFinite(d.order) ? d.order : 0,
+      })),
+    });
+  } catch (error: any) {
+    console.error("Error loading custom watchlist categories:", error);
+    return res.status(500).json({ error: error.message || "Failed to load custom watchlist categories" });
+  }
+});
+
+// PUT /api/watchlist-cache/custom-watchlist-categories/:name
+// Body: { order?: number }
+router.put("/custom-watchlist-categories/:name", async (req: Request, res: Response) => {
+  try {
+    await connectDB();
+    const name = String(req.params.name || "").trim();
+    const { order } = req.body || {};
+    if (!name) {
+      return res.status(400).json({ error: "Category name is required" });
+    }
+    const normalizedOrder = Number.isFinite(Number(order)) ? Number(order) : 0;
+    const doc = await CustomWatchlistCategory.findOneAndUpdate(
+      { name },
+      { name, order: normalizedOrder },
+      { upsert: true, new: true }
+    );
+    return res.json({
+      name: doc.name,
+      order: Number.isFinite(doc.order) ? doc.order : 0,
+    });
+  } catch (error: any) {
+    console.error("Error saving custom watchlist category:", error);
+    return res.status(500).json({ error: error.message || "Failed to save custom watchlist category" });
+  }
+});
+
+// DELETE /api/watchlist-cache/custom-watchlist-categories/:name
+router.delete("/custom-watchlist-categories/:name", async (req: Request, res: Response) => {
+  try {
+    await connectDB();
+    const name = String(req.params.name || "").trim();
+    if (!name) {
+      return res.status(400).json({ error: "Category name is required" });
+    }
+    await CustomWatchlistCategory.deleteOne({ name });
+    await CustomWatchlist.deleteMany({ category: name });
+    return res.json({ ok: true });
+  } catch (error: any) {
+    console.error("Error deleting custom watchlist category:", error);
+    return res.status(500).json({ error: error.message || "Failed to delete custom watchlist category" });
+  }
+});
 
 // GET /api/watchlist-cache/custom-watchlists
 router.get("/custom-watchlists", async (_req: Request, res: Response) => {
   try {
     await connectDB();
-    const docs = await CustomWatchlist.find({}).sort({ name: 1 });
+    const docs = await CustomWatchlist.find({}).sort({ order: 1, name: 1 });
     return res.json({
       watchlists: docs.map((d: any) => ({
         name: d.name,
+        description: d.description || "",
+        order: Number.isFinite(d.order) ? d.order : 0,
+        category: d.category || "",
         tickers: d.tickers || [],
+        stock_descriptions: d.stockDescriptions || {},
         data: d.data || [],
         last_refreshed: d.lastRefreshed || null,
       })),
@@ -26,12 +92,12 @@ router.get("/custom-watchlists", async (_req: Request, res: Response) => {
 });
 
 // PUT /api/watchlist-cache/custom-watchlists/:name
-// Body: { tickers: string[], data?: any[], last_refreshed?: ISO|null }
+// Body: { tickers: string[], data?: any[], stock_descriptions?: object, description?: string, order?: number, category?: string, last_refreshed?: ISO|null }
 router.put("/custom-watchlists/:name", async (req: Request, res: Response) => {
   try {
     await connectDB();
     const name = String(req.params.name || "").trim();
-    const { tickers, data, last_refreshed } = req.body || {};
+    const { tickers, data, stock_descriptions, description, order, category, last_refreshed } = req.body || {};
 
     if (!name) {
       return res.status(400).json({ error: "Watchlist name is required" });
@@ -48,6 +114,20 @@ router.put("/custom-watchlists/:name", async (req: Request, res: Response) => {
       )
     );
     const normalizedData = Array.isArray(data) ? data : [];
+    const normalizedStockDescriptions: Record<string, string> = {};
+    if (stock_descriptions && typeof stock_descriptions === "object") {
+      for (const [ticker, desc] of Object.entries(stock_descriptions)) {
+        const normalizedTicker = String(ticker || "").trim().toUpperCase();
+        if (!normalizedTicker) continue;
+        normalizedStockDescriptions[normalizedTicker] = String(desc || "").trim();
+      }
+    }
+    const normalizedDescription = typeof description === "string" ? description : "";
+    const normalizedOrder = Number.isFinite(Number(order)) ? Number(order) : 0;
+    const normalizedCategory = typeof category === "string" ? category.trim() : "";
+    if (!normalizedCategory) {
+      return res.status(400).json({ error: "category is required" });
+    }
     const parsedLastRefreshed =
       last_refreshed === null || last_refreshed === undefined
         ? null
@@ -62,7 +142,11 @@ router.put("/custom-watchlists/:name", async (req: Request, res: Response) => {
       { name },
       {
         name,
+        description: normalizedDescription,
+        order: normalizedOrder,
+        category: normalizedCategory,
         tickers: normalizedTickers,
+        stockDescriptions: normalizedStockDescriptions,
         data: normalizedData,
         lastRefreshed,
       },
@@ -71,7 +155,11 @@ router.put("/custom-watchlists/:name", async (req: Request, res: Response) => {
 
     return res.json({
       name: doc.name,
+      description: doc.description || "",
+      order: Number.isFinite(doc.order) ? doc.order : 0,
+      category: doc.category || "",
       tickers: doc.tickers || [],
+      stock_descriptions: doc.stockDescriptions || {},
       data: doc.data || [],
       last_refreshed: doc.lastRefreshed || null,
     });

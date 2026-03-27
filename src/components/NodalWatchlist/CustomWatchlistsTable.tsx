@@ -41,6 +41,7 @@ const CustomWatchlistsTable = ({
 
   const columns = [
     "Ticker",
+    "Description",
     "Starting Price",
     "Current Price",
     "Market Cap",
@@ -92,6 +93,7 @@ const CustomWatchlistsTable = ({
           {sortedData.map((row, idx) => (
             <tr key={idx} style={{ borderBottom: "1px solid #e2e8f0" }}>
               <td style={{ padding: "0.75rem" }}>{row.Ticker}</td>
+              <td style={{ padding: "0.75rem" }}>{(row as any).Description || ""}</td>
               <td style={{ padding: "0.75rem" }}>{formatValue(row["Starting Price"])}</td>
               <td style={{ padding: "0.75rem" }}>{formatValue(row["Current Price"])}</td>
               <td style={{ padding: "0.75rem" }}>{formatValue(row["Market Cap"])}</td>

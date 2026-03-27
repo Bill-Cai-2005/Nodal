@@ -11,6 +11,7 @@ const LOG_REFRESH_SPEED = true;
 
 export interface StockData {
   Ticker: string;
+  Description?: string;
   "Starting Price": number | null;
   "Current Price": number | null;
   "Market Cap": number | null;

@@ -21,6 +21,9 @@ import { runWithConcurrency } from "../../utils/concurrency";
 import CustomWatchlistsTable from "./CustomWatchlistsTable";
 
 const UNCATEGORIZED = "Uncategorized";
+type Props = {
+  isAdmin?: boolean;
+};
 
 const removeKeys = <T extends Record<string, any>>(source: T, keys: string[]): T => {
   if (keys.length === 0) return source;
@@ -61,7 +64,7 @@ const cancelButtonStyle: CSSProperties = {
   backgroundColor: "#6b7280",
 };
 
-const CustomWatchlists = () => {
+const CustomWatchlists = ({ isAdmin = false }: Props) => {
   const [watchlists, setWatchlists] = useState<WatchlistCache>({});
   const [watchlistOrder, setWatchlistOrder] = useState<string[]>([]);
   const [watchlistDescriptionByName, setWatchlistDescriptionByName] = useState<Record<string, string>>({});
@@ -105,6 +108,11 @@ const CustomWatchlists = () => {
   >({});
 
   const showPopup = (message: string) => setPopupMessage(message);
+  const requireAdmin = (message = "Admin password required.") => {
+    if (isAdmin) return true;
+    showPopup(message);
+    return false;
+  };
 
   useEffect(() => {
     (async () => {
@@ -179,6 +187,11 @@ const CustomWatchlists = () => {
     });
   }, [useCustomRange]);
 
+  useEffect(() => {
+    if (isAdmin) return;
+    setUseCustomRange(false);
+  }, [isAdmin]);
+
   const saveWatchlist = async (
     watchlistName: string,
     nextTickers: string[],
@@ -205,6 +218,7 @@ const CustomWatchlists = () => {
   };
 
   const handleCreateWatchlist = async (categoryName: string) => {
+    if (!requireAdmin()) return;
     const name = (newWatchlistNameByCategory[categoryName] || "").trim();
     if (!name) {
       showPopup("Please enter a watchlist name");
@@ -243,6 +257,7 @@ const CustomWatchlists = () => {
   };
 
   const handleCreateCategory = async () => {
+    if (!requireAdmin()) return;
     const name = newCategoryName.trim();
     if (!name) {
       showPopup("Please enter a category name");
@@ -265,6 +280,7 @@ const CustomWatchlists = () => {
   };
 
   const handleDeleteCategory = async (category: string) => {
+    if (!requireAdmin()) return;
     if (!confirm(`Delete category "${category}"? This will also delete all watchlists in it.`)) return;
     const affectedWatchlists = Object.keys(watchlists).filter(
       (watchlistName) => (watchlistCategoryByName[watchlistName] || "") === category
@@ -341,6 +357,7 @@ const CustomWatchlists = () => {
   };
 
   const handleAddTicker = async (watchlistName: string) => {
+    if (!requireAdmin()) return;
     const inputTicker = (newTickerByWatchlist[watchlistName] || "").trim();
     if (!inputTicker) {
       showPopup("Please enter a ticker");
@@ -387,6 +404,7 @@ const CustomWatchlists = () => {
   };
 
   const handleRemoveTicker = async (watchlistName: string, ticker: string) => {
+    if (!requireAdmin()) return;
     const updated = {
       ...watchlists,
       [watchlistName]: (watchlists[watchlistName] || []).filter((t) => t !== ticker),
@@ -409,6 +427,7 @@ const CustomWatchlists = () => {
   };
 
   const persistWatchlistOrder = async (nextOrder: string[]) => {
+    if (!requireAdmin("Unlock to reorder watchlists.")) return;
     setWatchlistOrder(nextOrder);
     try {
       await Promise.all(
@@ -422,6 +441,7 @@ const CustomWatchlists = () => {
   };
 
   const persistCategoryOrder = async (nextOrder: string[]) => {
+    if (!requireAdmin("Unlock to reorder categories.")) return;
     setCategoryOrder(nextOrder);
     try {
       await Promise.all(nextOrder.map((name, index) => saveCustomWatchlistCategoryToDb(name, index)));
@@ -437,12 +457,14 @@ const CustomWatchlists = () => {
   };
 
   const handleWatchlistDragStart = (event: DragEvent<HTMLDivElement>, watchlistName: string) => {
+    if (!isAdmin) return;
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", watchlistName);
     setDraggedWatchlistName(watchlistName);
   };
 
   const handleWatchlistDragOver = (event: DragEvent<HTMLDivElement>, watchlistName: string) => {
+    if (!isAdmin) return;
     event.preventDefault();
     if (draggedWatchlistName && draggedWatchlistName !== watchlistName) {
       setDragOverWatchlistName(watchlistName);
@@ -450,6 +472,7 @@ const CustomWatchlists = () => {
   };
 
   const handleWatchlistDrop = async (event: DragEvent<HTMLDivElement>, targetWatchlistName: string) => {
+    if (!isAdmin) return;
     event.preventDefault();
     const sourceWatchlistName = draggedWatchlistName || event.dataTransfer.getData("text/plain");
     if (!sourceWatchlistName || sourceWatchlistName === targetWatchlistName) {
@@ -483,17 +506,20 @@ const CustomWatchlists = () => {
   };
 
   const handleWatchlistDragEnd = () => {
+    if (!isAdmin) return;
     setDraggedWatchlistName(null);
     setDragOverWatchlistName(null);
   };
 
   const handleCategoryDragStart = (event: DragEvent<HTMLDivElement>, categoryName: string) => {
+    if (!isAdmin) return;
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", categoryName);
     setDraggedCategoryName(categoryName);
   };
 
   const handleCategoryDragOver = (event: DragEvent<HTMLDivElement>, categoryName: string) => {
+    if (!isAdmin) return;
     event.preventDefault();
     if (draggedCategoryName && draggedCategoryName !== categoryName) {
       setDragOverCategoryName(categoryName);
@@ -501,6 +527,7 @@ const CustomWatchlists = () => {
   };
 
   const handleCategoryDrop = async (event: DragEvent<HTMLDivElement>, targetCategoryName: string) => {
+    if (!isAdmin) return;
     event.preventDefault();
     const sourceCategoryName = draggedCategoryName || event.dataTransfer.getData("text/plain");
     if (!sourceCategoryName || sourceCategoryName === targetCategoryName) {
@@ -524,16 +551,19 @@ const CustomWatchlists = () => {
   };
 
   const handleCategoryDragEnd = () => {
+    if (!isAdmin) return;
     setDraggedCategoryName(null);
     setDragOverCategoryName(null);
   };
 
   const handleStartEditCategoryName = (category: string) => {
+    if (!requireAdmin()) return;
     setCategoryRenameByName((prev) => ({ ...prev, [category]: category }));
     setEditingCategoryByName((prev) => ({ ...prev, [category]: true }));
   };
 
   const handleSaveCategoryName = async (oldCategory: string) => {
+    if (!requireAdmin()) return;
     const renamed = (categoryRenameByName[oldCategory] || "").trim();
     if (!renamed) {
       showPopup("Category name cannot be empty.");
@@ -592,6 +622,7 @@ const CustomWatchlists = () => {
   };
 
   const handleSaveWatchlistDescription = async (watchlistName: string) => {
+    if (!requireAdmin()) return;
     try {
       await saveWatchlist(
         watchlistName,
@@ -611,6 +642,7 @@ const CustomWatchlists = () => {
   };
 
   const handleSaveWatchlistName = async (watchlistName: string) => {
+    if (!requireAdmin()) return;
     const nextName = (watchlistNameDraftByName[watchlistName] ?? watchlistName).trim();
     const currentDescription = watchlistDescriptionByName[watchlistName] || "";
 
@@ -680,6 +712,7 @@ const CustomWatchlists = () => {
   };
 
   const handleSaveStockDescription = async (watchlistName: string, ticker: string, description: string) => {
+    if (!requireAdmin()) return;
     const nextStockDescriptions = {
       ...(stockDescriptionsByWatchlist[watchlistName] || {}),
       [ticker]: description,
@@ -712,6 +745,7 @@ const CustomWatchlists = () => {
   };
 
   const handleStartEditStockDescription = (watchlistName: string, ticker: string) => {
+    if (!requireAdmin()) return;
     const liveDescription = stockDescriptionsByWatchlist[watchlistName]?.[ticker] || "";
     setStockDescriptionDraftByWatchlist((prev) => ({
       ...prev,
@@ -750,6 +784,7 @@ const CustomWatchlists = () => {
   };
 
   const handleDeleteWatchlist = async (watchlistName: string) => {
+    if (!requireAdmin()) return;
     if (!confirm(`Delete watchlist "${watchlistName}"?`)) return;
     const updated = { ...watchlists };
     delete updated[watchlistName];
@@ -930,6 +965,7 @@ const CustomWatchlists = () => {
   };
 
   const handleLoadHistoricalData = async () => {
+    if (!requireAdmin("Unlock to refresh custom time ranges.")) return;
     if (!useCustomRange) {
       showPopup("Enable 'Use Custom Time Range' first.");
       return;
@@ -1045,13 +1081,17 @@ const CustomWatchlists = () => {
           </button>
         </div>
 
-        {hasMarketData && (
+        {isAdmin && hasMarketData && (
           <div style={{ display: "flex", gap: "1rem", alignItems: "center", justifyContent: "center", flexWrap: "wrap", marginBottom: "1rem" }}>
             <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
               <input
                 type="checkbox"
                 checked={useCustomRange}
-                onChange={(e) => setUseCustomRange(e.target.checked)}
+                disabled={!isAdmin}
+                onChange={(e) => {
+                  if (!requireAdmin("Unlock to use custom time ranges.")) return;
+                  setUseCustomRange(e.target.checked);
+                }}
               />
               Use Custom Time Range
             </label>
@@ -1060,19 +1100,27 @@ const CustomWatchlists = () => {
                 <input
                   type="date"
                   value={customStart.toISOString().split("T")[0]}
-                  onChange={(e) => setCustomStart(new Date(e.target.value))}
+                  disabled={!isAdmin}
+                  onChange={(e) => {
+                    if (!requireAdmin("Unlock to use custom time ranges.")) return;
+                    setCustomStart(new Date(e.target.value));
+                  }}
                   style={{ padding: "0.5rem", borderRadius: "4px", border: "1px solid #ccc" }}
                 />
                 <input
                   type="date"
                   value={customEnd.toISOString().split("T")[0]}
-                  onChange={(e) => setCustomEnd(new Date(e.target.value))}
+                  disabled={!isAdmin}
+                  onChange={(e) => {
+                    if (!requireAdmin("Unlock to use custom time ranges.")) return;
+                    setCustomEnd(new Date(e.target.value));
+                  }}
                   style={{ padding: "0.5rem", borderRadius: "4px", border: "1px solid #ccc" }}
                 />
                 <button
                   type="button"
                   onClick={handleLoadHistoricalData}
-                  disabled={loadingAll || Boolean(validatingWatchlist)}
+                  disabled={!isAdmin || loadingAll || Boolean(validatingWatchlist)}
                   style={{
                     padding: "0.65rem 1rem",
                     backgroundColor: "#000000",
@@ -1182,7 +1230,7 @@ const CustomWatchlists = () => {
         return (
           <div
             key={`category-${category}`}
-            draggable
+            draggable={isAdmin}
             onDragStart={(event) => handleCategoryDragStart(event, category)}
             onDragOver={(event) => handleCategoryDragOver(event, category)}
             onDrop={(event) => void handleCategoryDrop(event, category)}
@@ -1211,7 +1259,7 @@ const CustomWatchlists = () => {
               }}
             >
               <div>
-                {editingCategoryByName[category] ? (
+                {isAdmin && editingCategoryByName[category] ? (
                   <div style={{ display: "flex", gap: "0.4rem", alignItems: "center", flexWrap: "wrap", marginBottom: "0.25rem" }}>
                     <input
                       type="text"
@@ -1232,6 +1280,7 @@ const CustomWatchlists = () => {
                 ) : (
                   <h2
                     onClick={(e) => {
+                      if (!isAdmin) return;
                       e.stopPropagation();
                       handleStartEditCategoryName(category);
                     }}
@@ -1240,7 +1289,7 @@ const CustomWatchlists = () => {
                     {category}
                   </h2>
                 )}
-                {isCategoryExpanded && (
+                {isAdmin && isCategoryExpanded && (
                   <button
                     type="button"
                     onClick={(e) => {
@@ -1264,7 +1313,7 @@ const CustomWatchlists = () => {
                 )}
               </div>
 
-              {isCategoryExpanded && (
+              {isAdmin && isCategoryExpanded && (
               <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
                 <button
                   type="button"
@@ -1341,7 +1390,7 @@ const CustomWatchlists = () => {
                   return (
                     <div
                       key={watchlistName}
-                      draggable
+                      draggable={isAdmin}
                       onDragStart={(event) => handleWatchlistDragStart(event, watchlistName)}
                       onDragOver={(event) => handleWatchlistDragOver(event, watchlistName)}
                       onDrop={(event) => void handleWatchlistDrop(event, watchlistName)}
@@ -1370,7 +1419,7 @@ const CustomWatchlists = () => {
                         }}
                       >
                         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
-                          {editingWatchlistNameByName[watchlistName] ? (
+                          {isAdmin && editingWatchlistNameByName[watchlistName] ? (
                             <input
                               type="text"
                               value={watchlistNameDraftByName[watchlistName] ?? watchlistName}
@@ -1392,6 +1441,7 @@ const CustomWatchlists = () => {
                           ) : (
                             <h2
                               onClick={(e) => {
+                                if (!isAdmin) return;
                                 e.stopPropagation();
                                 setWatchlistNameDraftByName((prev) => ({ ...prev, [watchlistName]: watchlistName }));
                                 setEditingWatchlistNameByName((prev) => ({ ...prev, [watchlistName]: true }));
@@ -1403,7 +1453,7 @@ const CustomWatchlists = () => {
                           )}
                         </div>
 
-                        {isExpanded && (
+                        {isAdmin && isExpanded && (
                         <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
                           <button
                             type="button"
@@ -1453,9 +1503,10 @@ const CustomWatchlists = () => {
                         {isExpanded && (
                         <div style={{ width: "100%", marginTop: "0.5rem", display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
                           <div style={{ flex: 1, minWidth: "260px" }}>
-                            {!editingWatchlistDescriptionByName[watchlistName] ? (
+                            {!isAdmin || !editingWatchlistDescriptionByName[watchlistName] ? (
                               <div
                                 onClick={(e) => {
+                                  if (!isAdmin) return;
                                   e.stopPropagation();
                                   setWatchlistDescriptionDraftByName((prev) => ({
                                     ...prev,
@@ -1468,7 +1519,7 @@ const CustomWatchlists = () => {
                                   whiteSpace: "pre-wrap",
                                   flex: 1,
                                   fontSize: "0.9rem",
-                                  cursor: "text",
+                                  cursor: isAdmin ? "text" : "default",
                                 }}
                               >
                                 <div>
@@ -1505,7 +1556,7 @@ const CustomWatchlists = () => {
 
                       {isExpanded && (
                         <>
-                          {isEditing && (
+                          {isAdmin && isEditing && (
                             <div
                               style={{
                                 marginBottom: "1rem",
@@ -1602,7 +1653,7 @@ const CustomWatchlists = () => {
                               setSortAscendingByWatchlist((prev) => ({ ...prev, [watchlistName]: value }))
                             }
                             formatValue={formatValue}
-                            isAdmin={true}
+                            isAdmin={isAdmin}
                             showCustomDatesChange={useCustomRange}
                             expandedByTicker={expandedStockByWatchlist[watchlistName] || {}}
                             editingByTicker={editingStockByWatchlist[watchlistName] || {}}
@@ -1629,7 +1680,7 @@ const CustomWatchlists = () => {
       })}
 
       <div style={{ marginTop: "1rem", paddingTop: "1rem", borderTop: "1px solid #e5e7eb" }}>
-        {!showCreateCategoryControls ? (
+        {!isAdmin ? null : !showCreateCategoryControls ? (
           <button
             type="button"
             onClick={() => setShowCreateCategoryControls(true)}

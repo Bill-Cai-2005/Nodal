@@ -48,7 +48,7 @@ const PageHeader = ({ researchColor = "#000000", zIndex = 10 }: PageHeaderProps)
       <span style={{ color: researchColor }}>Research</span>
       </div>
       <div
-        onClick={() => isHomepage ? navigate("/about") : navigate("/")}
+        onClick={() => (isHomepage ? navigate("/tools") : navigate("/"))}
         className="header-red-node"
         style={{
           width: "32px",

@@ -5,7 +5,6 @@ import MobileHome from "./pages/MobileHome";
 import BlogManagement from "./pages/BlogManagement";
 import Blog from "./pages/Blog";
 import Blogs from "./pages/Blogs";
-import About from "./pages/About";
 import Legal from "./pages/Legal";
 import NodalWatchlist from "./pages/NodalWatchlist";
 import Newsletter from "./pages/Newsletter";
@@ -26,7 +25,6 @@ function App() {
             </div>
           }
         />
-        <Route path="/about" element={<About />} />
         <Route path="/legal" element={<Legal />} />
         <Route path="/newsletter" element={<Newsletter />} />
         <Route path="/tools" element={<NodalWatchlist />} />

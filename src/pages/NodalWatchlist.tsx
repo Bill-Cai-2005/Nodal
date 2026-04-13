@@ -15,12 +15,13 @@ const NodalWatchlist = () => {
   const [adminPassword, setAdminPassword] = useState("");
   const [activeTab, setActiveTab] = useState<"universal" | "custom">("custom");
   const hasAccess = !REQUIRE_ADMIN_PASSCODE || isAdmin;
+  const canViewUniversal = hasAccess;
 
   useEffect(() => {
-    if (!hasAccess) {
+    if (!canViewUniversal) {
       setActiveTab("custom");
     }
-  }, [hasAccess]);
+  }, [canViewUniversal]);
 
   const handleUnlock = async () => {
     if (!adminPassword.trim()) {
@@ -74,7 +75,8 @@ const NodalWatchlist = () => {
   const getTabStyle = (tab: "universal" | "custom") => ({
     ...tabStyle,
     color: activeTab === tab ? "#000000" : "#666666",
-    borderBottom: activeTab === tab ? "2px solid #000000" : "2px solid transparent",
+    borderBottom:
+      activeTab === tab ? "2px solid #000000" : "2px solid transparent",
   });
 
   const nodeStyle = {
@@ -102,12 +104,51 @@ const NodalWatchlist = () => {
             textAlign: "center",
           }}
         >
-          Nodal Watchlist Tools
+          Watchlist
         </h1>
+
+        <>
+          <div
+            style={{
+              display: "flex",
+              gap: "1rem",
+              marginBottom: "2rem",
+              justifyContent: "center",
+            }}
+          >
+            {canViewUniversal && (
+              <button onClick={() => setActiveTab("universal")} style={getTabStyle("universal")}>
+                Universal Watchlist
+              </button>
+            )}
+            <button onClick={() => setActiveTab("custom")} style={getTabStyle("custom")}>
+              Custom Watchlists
+            </button>
+          </div>
+
+          {activeTab === "universal" ? (
+            <UniversalWatchlist />
+          ) : (
+            <CustomWatchlists isAdmin={hasAccess} />
+          )}
+        </>
 
         {REQUIRE_ADMIN_PASSCODE && !hasAccess && (
           <div
             style={{
+              textAlign: "center",
+              color: "#666666",
+              marginBottom: "1.5rem",
+            }}
+          >
+            Enter the admin password to access tools.
+          </div>
+        )}
+
+        {REQUIRE_ADMIN_PASSCODE && !hasAccess && (
+          <div
+            style={{
+              marginTop: "2rem",
               marginBottom: "1.5rem",
               padding: "1rem 1.25rem",
               borderRadius: "8px",
@@ -164,33 +205,6 @@ const NodalWatchlist = () => {
                 Unlock
               </button>
             </div>
-          </div>
-        )}
-
-        {hasAccess && (
-          <>
-            <div style={{ display: "flex", gap: "1rem", marginBottom: "2rem", justifyContent: "center" }}>
-              <button
-                onClick={() => setActiveTab("universal")}
-                style={getTabStyle("universal")}
-              >
-                Universal Watchlist
-              </button>
-              <button
-                onClick={() => setActiveTab("custom")}
-                style={getTabStyle("custom")}
-              >
-                Custom Watchlists
-              </button>
-            </div>
-
-            {activeTab === "universal" ? <UniversalWatchlist /> : <CustomWatchlists />}
-          </>
-        )}
-
-        {REQUIRE_ADMIN_PASSCODE && !hasAccess && (
-          <div style={{ textAlign: "center", color: "#666666", marginBottom: "1.5rem" }}>
-            Enter the admin password to access tools.
           </div>
         )}
 

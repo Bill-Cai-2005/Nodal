@@ -148,13 +148,15 @@ const CustomWatchlistsTable = ({
                           <div style={{ color: "#374151", whiteSpace: "pre-wrap", flex: 1 }}>
                             {liveDescription || "No description"}
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => onStartEditDescription?.(ticker)}
-                            style={{ padding: "0.5rem 0.8rem", borderRadius: "6px", border: "1px solid #d1d5db", background: "#ffffff", cursor: "pointer" }}
-                          >
-                            {liveDescription ? "Edit Description" : "Add Description"}
-                          </button>
+                          {isAdmin && (
+                            <button
+                              type="button"
+                              onClick={() => onStartEditDescription?.(ticker)}
+                              style={{ padding: "0.5rem 0.8rem", borderRadius: "6px", border: "1px solid #d1d5db", background: "#ffffff", cursor: "pointer" }}
+                            >
+                              {liveDescription ? "Edit Description" : "Add Description"}
+                            </button>
+                          )}
                         </div>
                       ) : (
                         <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", width: "100%" }}>

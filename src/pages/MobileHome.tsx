@@ -84,7 +84,7 @@ const MobileHome = () => {
           Research
         </div>
         <div
-          onClick={() => navigate("/about")}
+          onClick={() => navigate("/tools")}
           style={{
             fontFamily: "Montserrat, sans-serif",
             fontSize: "1.25rem",
@@ -100,7 +100,7 @@ const MobileHome = () => {
             e.currentTarget.style.opacity = "1";
           }}
         >
-          About
+          Tools
         </div>
         <div
           onClick={() => navigate("/newsletter")}

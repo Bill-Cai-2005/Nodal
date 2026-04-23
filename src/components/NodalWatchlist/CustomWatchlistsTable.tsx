@@ -1,5 +1,6 @@
 import { Fragment } from "react";
 import type { StockData } from "../../utils/polygonApi";
+import { parseStockDescriptionRichText } from "../../utils/stockDescriptionRichText";
 
 type Props = {
   data: StockData[];
@@ -146,7 +147,7 @@ const CustomWatchlistsTable = ({
                       {!isEditing ? (
                         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
                           <div style={{ color: "#374151", whiteSpace: "pre-wrap", flex: 1 }}>
-                            {liveDescription || "No description"}
+                            {liveDescription ? parseStockDescriptionRichText(liveDescription) : "No description"}
                           </div>
                           {isAdmin && (
                             <button
@@ -171,6 +172,9 @@ const CustomWatchlistsTable = ({
                             rows={3}
                             style={{ width: "100%", minHeight: "84px", padding: "0.6rem", borderRadius: "6px", border: "1px solid #d1d5db", resize: "vertical" }}
                           />
+                          <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>
+                            Wrap text in <strong>**double asterisks**</strong> to bold it in the saved description.
+                          </div>
                           <div style={{ display: "flex", gap: "0.5rem" }}>
                             <button
                               type="button"

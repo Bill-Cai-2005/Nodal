@@ -65,7 +65,6 @@ const CustomWatchlistsTable = ({
     "Daily Stock Change %",
     ...(showCustomDatesChange ? ["Custom Dates Change %"] : []),
     "Volume",
-    "Industry",
   ];
 
   return (
@@ -139,7 +138,6 @@ const CustomWatchlistsTable = ({
                     </td>
                   )}
                   <td style={{ padding: "0.75rem" }}>{formatVolume(row.Volume)}</td>
-                  <td style={{ padding: "0.75rem" }}>{row.Industry || "N/A"}</td>
                 </tr>
                 {isExpanded && (
                   <tr>

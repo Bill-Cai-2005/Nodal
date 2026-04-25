@@ -27,6 +27,40 @@ export interface TickerReference {
   industry: string | null;
 }
 
+const EXCHANGE_ALIASES: Record<string, string> = {
+  KRX: "XKRX",
+  XKRX: "XKRX",
+  KOSPI: "XKRX",
+  KOSDAQ: "XKRX",
+};
+
+/**
+ * Normalize user input tickers into a consistent, provider-friendly form.
+ *
+ * Examples:
+ * - `KRX:005930` -> `005930:XKRX`
+ * - `005930.KS` / `005930.KQ` -> `005930:XKRX`
+ */
+export const normalizeTickerInput = (raw: string): string => {
+  const input = String(raw || "").trim();
+  if (!input) return "";
+
+  const upper = input.toUpperCase();
+
+  const yahooKorea = upper.match(/^([0-9A-Z.\-]+)\.(KS|KQ)$/);
+  if (yahooKorea) return `${yahooKorea[1]}:XKRX`;
+
+  const exchPrefixed = upper.match(/^([A-Z]{2,10})\s*:\s*([0-9A-Z.\-]+)$/);
+  if (exchPrefixed) {
+    const exch = exchPrefixed[1];
+    const symbol = exchPrefixed[2];
+    const mic = EXCHANGE_ALIASES[exch] || exch;
+    return `${symbol}:${mic}`;
+  }
+
+  return upper;
+};
+
 const polygonGet = async (
   path: string,
   params?: Record<string, string | number | boolean>,
@@ -121,7 +155,8 @@ const isIndividualCompanyResult = (row: any): boolean => {
 
 export const fetchTickerReference = async (ticker: string, signal?: AbortSignal): Promise<TickerReference | null> => {
   try {
-    const data = await polygonGet(`/v3/reference/tickers/${ticker}`, undefined, 20, 4, signal);
+    const normalized = normalizeTickerInput(ticker);
+    const data = await polygonGet(`/v3/reference/tickers/${normalized}`, undefined, 20, 4, signal);
     const row = data?.results || {};
     if (!row || !isIndividualCompanyResult(row)) return null;
 
@@ -136,11 +171,19 @@ export const fetchTickerReference = async (ticker: string, signal?: AbortSignal)
 
 export const validateTicker = async (ticker: string): Promise<{ valid: boolean; reason?: string }> => {
   try {
-    const ref = await fetchTickerReference(ticker);
-    if (!ref) {
-      return { valid: false, reason: "Ticker is not an individual operating company (common stock only)." };
-    }
-    return { valid: true };
+    const normalized = normalizeTickerInput(ticker);
+    const ref = await fetchTickerReference(normalized);
+    if (ref) return { valid: true };
+
+    const looksInternational =
+      normalized.includes(":") ||
+      /^\d{3,}$/.test(normalized) ||
+      /^[0-9A-Z.\-]+:[0-9A-Z.\-]+$/.test(normalized) ||
+      /^[0-9A-Z.\-]+\.[A-Z]{1,6}$/.test(normalized);
+
+    if (looksInternational) return { valid: true };
+
+    return { valid: false, reason: "Ticker not found (or not a common stock operating company)." };
   } catch (err: any) {
     return { valid: false, reason: `Validation failed: ${err.message}` };
   }

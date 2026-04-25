@@ -29,15 +29,25 @@ app.use(cors({
     // Allow requests with no origin (like Postman or mobile apps)
     if (!origin) return callback(null, true);
 
+    const normalizedOrigin = origin.replace(/\/$/, "");
+
     // Check if the origin is in our allowed list
-    const isAllowed = allowedOrigins.includes(origin);
+    const isAllowed = allowedOrigins.includes(normalizedOrigin);
+
+    // Local dev convenience: allow loopback hosts on any port.
+    const isLocalDev =
+      /^https?:\/\/localhost:\d+$/.test(normalizedOrigin) ||
+      /^https?:\/\/127\.0\.0\.1:\d+$/.test(normalizedOrigin) ||
+      /^https?:\/\/0\.0\.0\.0:\d+$/.test(normalizedOrigin) ||
+      /^https?:\/\/\[::1\]:\d+$/.test(normalizedOrigin);
 
     // Check if it's a Vercel preview deployment
-    const isVercelPreview = origin.endsWith(".vercel.app");
+    const isVercelPreview = normalizedOrigin.endsWith(".vercel.app");
 
-    if (isAllowed || isVercelPreview) {
+    if (isAllowed || isLocalDev || isVercelPreview) {
       callback(null, true);
     } else {
+      console.warn("CORS blocked request from origin:", normalizedOrigin);
       callback(new Error("Not allowed by CORS"));
     }
   },

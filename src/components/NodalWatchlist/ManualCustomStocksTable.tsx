@@ -67,7 +67,11 @@ export type ManualCustomStocksTableProps = {
     ticker: string,
     value: string,
   ) => void;
-  onSaveDescription: (watchlistName: string, ticker: string, value: string) => void;
+  onSaveDescription: (
+    watchlistName: string,
+    ticker: string,
+    value: string,
+  ) => void;
   onStartEditSubcategory: (watchlistName: string, ticker: string) => void;
   onCancelEditSubcategory: (watchlistName: string, ticker: string) => void;
   onDraftSubcategoryChange: (
@@ -75,7 +79,11 @@ export type ManualCustomStocksTableProps = {
     ticker: string,
     value: string,
   ) => void;
-  onSaveSubcategory: (watchlistName: string, ticker: string, value: string) => void;
+  onSaveSubcategory: (
+    watchlistName: string,
+    ticker: string,
+    value: string,
+  ) => void;
 };
 
 const ManualCustomStocksTable = ({
@@ -112,7 +120,7 @@ const ManualCustomStocksTable = ({
           marginBottom: "0.4rem",
         }}
       >
-        Manual custom stocks
+        International Stocks
       </div>
       <div style={simpleTableStyles.wrapper}>
         <table style={simpleTableStyles.table}>
@@ -156,7 +164,9 @@ const ManualCustomStocksTable = ({
                     <td style={simpleTableStyles.td}>{ticker}</td>
                     <td style={simpleTableStyles.td}>
                       {!isAdmin ? (
-                        <span style={{ color: "#374151", whiteSpace: "nowrap" }}>
+                        <span
+                          style={{ color: "#374151", whiteSpace: "nowrap" }}
+                        >
                           {(liveSubcategory || "").trim() || "—"}
                         </span>
                       ) : !isEditingSubcategory ? (
@@ -214,7 +224,9 @@ const ManualCustomStocksTable = ({
                   </tr>
 
                   {isExpanded && (
-                    <tr key={`${watchlistName}-manual-row-expanded-${ticker}-${idx}`}>
+                    <tr
+                      key={`${watchlistName}-manual-row-expanded-${ticker}-${idx}`}
+                    >
                       <td
                         colSpan={3}
                         style={simpleTableStyles.expandedCell}
@@ -244,10 +256,14 @@ const ManualCustomStocksTable = ({
                             {isAdmin && (
                               <button
                                 type="button"
-                                onClick={() => onStartEditDescription(watchlistName, ticker)}
+                                onClick={() =>
+                                  onStartEditDescription(watchlistName, ticker)
+                                }
                                 style={simpleTableStyles.secondaryButton}
                               >
-                                {liveDescription ? "Edit Description" : "Add Description"}
+                                {liveDescription
+                                  ? "Edit Description"
+                                  : "Add Description"}
                               </button>
                             )}
                           </div>
@@ -263,7 +279,11 @@ const ManualCustomStocksTable = ({
                             <textarea
                               value={draftDescription}
                               onChange={(e) =>
-                                onDraftDescriptionChange(watchlistName, ticker, e.target.value)
+                                onDraftDescriptionChange(
+                                  watchlistName,
+                                  ticker,
+                                  e.target.value,
+                                )
                               }
                               onInput={(e) => {
                                 const target = e.currentTarget;
@@ -280,14 +300,22 @@ const ManualCustomStocksTable = ({
                                 resize: "vertical",
                               }}
                             />
-                            <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>
-                              Wrap text in <strong>**double asterisks**</strong> to bold it in the
-                              saved description.
+                            <div
+                              style={{ fontSize: "0.75rem", color: "#6b7280" }}
+                            >
+                              Wrap text in <strong>**double asterisks**</strong>{" "}
+                              to bold it in the saved description.
                             </div>
                             <div style={{ display: "flex", gap: "0.5rem" }}>
                               <button
                                 type="button"
-                                onClick={() => onSaveDescription(watchlistName, ticker, draftDescription)}
+                                onClick={() =>
+                                  onSaveDescription(
+                                    watchlistName,
+                                    ticker,
+                                    draftDescription,
+                                  )
+                                }
                                 style={{
                                   padding: "0.5rem 0.8rem",
                                   borderRadius: "6px",
@@ -301,7 +329,9 @@ const ManualCustomStocksTable = ({
                               </button>
                               <button
                                 type="button"
-                                onClick={() => onCancelEditDescription(watchlistName, ticker)}
+                                onClick={() =>
+                                  onCancelEditDescription(watchlistName, ticker)
+                                }
                                 style={{
                                   padding: "0.5rem 0.8rem",
                                   borderRadius: "6px",
@@ -330,4 +360,3 @@ const ManualCustomStocksTable = ({
 };
 
 export default ManualCustomStocksTable;
-

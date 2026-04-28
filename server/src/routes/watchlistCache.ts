@@ -81,6 +81,7 @@ router.get("/custom-watchlists", async (_req: Request, res: Response) => {
         category: d.category || "",
         tickers: d.tickers || [],
         stock_descriptions: d.stockDescriptions || {},
+        stock_subcategories: d.stockSubcategories || {},
         data: d.data || [],
         last_refreshed: d.lastRefreshed || null,
       })),
@@ -92,12 +93,12 @@ router.get("/custom-watchlists", async (_req: Request, res: Response) => {
 });
 
 // PUT /api/watchlist-cache/custom-watchlists/:name
-// Body: { tickers: string[], data?: any[], stock_descriptions?: object, description?: string, order?: number, category?: string, last_refreshed?: ISO|null }
+// Body: { tickers: string[], data?: any[], stock_descriptions?: object, stock_subcategories?: object, description?: string, order?: number, category?: string, last_refreshed?: ISO|null }
 router.put("/custom-watchlists/:name", async (req: Request, res: Response) => {
   try {
     await connectDB();
     const name = String(req.params.name || "").trim();
-    const { tickers, data, stock_descriptions, description, order, category, last_refreshed } = req.body || {};
+    const { tickers, data, stock_descriptions, stock_subcategories, description, order, category, last_refreshed } = req.body || {};
 
     if (!name) {
       return res.status(400).json({ error: "Watchlist name is required" });
@@ -120,6 +121,15 @@ router.put("/custom-watchlists/:name", async (req: Request, res: Response) => {
         const normalizedTicker = String(ticker || "").trim().toUpperCase();
         if (!normalizedTicker) continue;
         normalizedStockDescriptions[normalizedTicker] = String(desc || "").trim();
+      }
+    }
+
+    const normalizedStockSubcategories: Record<string, string> = {};
+    if (stock_subcategories && typeof stock_subcategories === "object") {
+      for (const [ticker, sub] of Object.entries(stock_subcategories)) {
+        const normalizedTicker = String(ticker || "").trim().toUpperCase();
+        if (!normalizedTicker) continue;
+        normalizedStockSubcategories[normalizedTicker] = String(sub || "").trim();
       }
     }
     const normalizedDescription = typeof description === "string" ? description : "";
@@ -147,6 +157,7 @@ router.put("/custom-watchlists/:name", async (req: Request, res: Response) => {
         category: normalizedCategory,
         tickers: normalizedTickers,
         stockDescriptions: normalizedStockDescriptions,
+        stockSubcategories: normalizedStockSubcategories,
         data: normalizedData,
         lastRefreshed,
       },
@@ -160,6 +171,7 @@ router.put("/custom-watchlists/:name", async (req: Request, res: Response) => {
       category: doc.category || "",
       tickers: doc.tickers || [],
       stock_descriptions: doc.stockDescriptions || {},
+      stock_subcategories: doc.stockSubcategories || {},
       data: doc.data || [],
       last_refreshed: doc.lastRefreshed || null,
     });

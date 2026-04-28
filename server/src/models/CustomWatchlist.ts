@@ -7,6 +7,7 @@ export interface ICustomWatchlist extends Document {
   category: string;
   tickers: string[];
   stockDescriptions: Record<string, string>;
+  stockSubcategories: Record<string, string>;
   data: any[];
   lastRefreshed: Date | null;
   createdAt: Date;
@@ -21,6 +22,7 @@ const CustomWatchlistSchema: Schema = new Schema(
     category: { type: String, required: true, default: "Uncategorized", index: true },
     tickers: { type: [String], required: true, default: [] },
     stockDescriptions: { type: Schema.Types.Mixed, required: true, default: {} },
+    stockSubcategories: { type: Schema.Types.Mixed, required: true, default: {} },
     data: { type: [Schema.Types.Mixed], required: true, default: [] },
     lastRefreshed: { type: Date, default: null },
   },

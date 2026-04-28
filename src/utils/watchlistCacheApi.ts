@@ -7,6 +7,7 @@ export type CustomWatchlistDbEntry = {
   category?: string;
   tickers: string[];
   stock_descriptions?: Record<string, string>;
+  stock_subcategories?: Record<string, string>;
   data: any[];
   last_refreshed: string | null;
 };
@@ -75,6 +76,7 @@ export async function saveCustomWatchlistToDb(
     order?: number;
     category?: string;
     stockDescriptions?: Record<string, string>;
+    stockSubcategories?: Record<string, string>;
   }
 ): Promise<CustomWatchlistDbEntry> {
   const res = await fetch(getApiEndpoint(`/api/watchlist-cache/custom-watchlists/${encodeURIComponent(name)}`), {
@@ -88,6 +90,7 @@ export async function saveCustomWatchlistToDb(
       order: options?.order,
       category: options?.category,
       stock_descriptions: options?.stockDescriptions,
+      stock_subcategories: options?.stockSubcategories,
     }),
   });
   if (!res.ok) {

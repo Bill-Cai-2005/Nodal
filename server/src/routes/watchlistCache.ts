@@ -134,10 +134,12 @@ router.put("/custom-watchlists/:name", async (req: Request, res: Response) => {
     }
     const normalizedDescription = typeof description === "string" ? description : "";
     const normalizedOrder = Number.isFinite(Number(order)) ? Number(order) : 0;
-    const normalizedCategory = typeof category === "string" ? category.trim() : "";
-    if (!normalizedCategory) {
-      return res.status(400).json({ error: "category is required" });
-    }
+    // Back-compat: older clients/watchlists may not include a category.
+    // Defaulting avoids silently failing saves (e.g. stock_subcategories updates).
+    const normalizedCategory =
+      typeof category === "string" && category.trim()
+        ? category.trim()
+        : "Uncategorized";
     const parsedLastRefreshed =
       last_refreshed === null || last_refreshed === undefined
         ? null

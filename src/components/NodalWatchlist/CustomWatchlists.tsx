@@ -417,7 +417,8 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
     const nextOrder =
       overrides?.order ?? Math.max(0, watchlistOrder.indexOf(watchlistName));
     const nextCategory =
-      overrides?.category ?? watchlistCategoryByName[watchlistName] ?? "";
+      (overrides?.category ?? watchlistCategoryByName[watchlistName] ?? "")
+        .trim() || UNCATEGORIZED;
     const nextStockDescriptions =
       overrides?.stockDescriptions ??
       stockDescriptionsByWatchlist[watchlistName] ??

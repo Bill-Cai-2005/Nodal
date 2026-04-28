@@ -1,4 +1,12 @@
-import { useEffect, useState, type CSSProperties, type DragEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+  type CSSProperties,
+  type DragEvent,
+} from "react";
 import {
   fetchStockData,
   validateTicker,
@@ -10,6 +18,12 @@ import {
   type WatchlistCache,
 } from "../../utils/watchlistCache";
 import {
+  normalizeTickerInputLocal,
+  parseNumberInput,
+  removeKeys,
+  renameKey,
+} from "../../utils/watchlistUtils";
+import {
   deleteCustomWatchlistCategoryFromDb,
   deleteCustomWatchlistFromDb,
   loadCustomWatchlistCategoriesFromDb,
@@ -18,38 +32,12 @@ import {
   saveCustomWatchlistToDb,
 } from "../../utils/watchlistCacheApi";
 import { runWithConcurrency } from "../../utils/concurrency";
-import CustomWatchlistsTable from "./CustomWatchlistsTable";
+import CategorySection from "./CategorySection";
+import WatchlistSection from "./WatchlistSection";
 
 const UNCATEGORIZED = "Uncategorized";
 type Props = {
   isAdmin?: boolean;
-};
-
-const removeKeys = <T extends Record<string, any>>(
-  source: T,
-  keys: string[],
-): T => {
-  if (keys.length === 0) return source;
-  const keySet = new Set(keys);
-  return Object.fromEntries(
-    Object.entries(source).filter(([key]) => !keySet.has(key)),
-  ) as T;
-};
-
-const renameKey = <T extends Record<string, any>>(
-  source: T,
-  fromKey: string,
-  toKey: string,
-): T => {
-  if (
-    !Object.prototype.hasOwnProperty.call(source, fromKey) ||
-    fromKey === toKey
-  )
-    return source;
-  const next = { ...source } as T;
-  (next as any)[toKey] = (next as any)[fromKey];
-  delete (next as any)[fromKey];
-  return next;
 };
 
 const iconButtonBaseStyle: CSSProperties = {
@@ -94,6 +82,20 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
     useState<Record<string, Record<string, string>>>({});
   const [stockSubcategoriesByWatchlist, setStockSubcategoriesByWatchlist] =
     useState<Record<string, Record<string, string>>>({});
+
+  // Avoid stale-closure overwrites during async refresh/save flows.
+  const stockDescriptionsByWatchlistRef = useRef<
+    Record<string, Record<string, string>>
+  >({});
+  const stockSubcategoriesByWatchlistRef = useRef<
+    Record<string, Record<string, string>>
+  >({});
+  useEffect(() => {
+    stockDescriptionsByWatchlistRef.current = stockDescriptionsByWatchlist;
+  }, [stockDescriptionsByWatchlist]);
+  useEffect(() => {
+    stockSubcategoriesByWatchlistRef.current = stockSubcategoriesByWatchlist;
+  }, [stockSubcategoriesByWatchlist]);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [showCreateCategoryControls, setShowCreateCategoryControls] =
     useState(false);
@@ -106,10 +108,7 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
     Record<string, string>
   >({});
   const [newManualByWatchlist, setNewManualByWatchlist] = useState<
-    Record<
-      string,
-      { ticker: string; currentPrice: string; marketCap: string }
-    >
+    Record<string, { ticker: string; currentPrice: string; marketCap: string }>
   >({});
   const [watchlistData, setWatchlistData] = useState<
     Record<string, StockData[]>
@@ -179,10 +178,14 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
     stockDescriptionDraftByWatchlist,
     setStockDescriptionDraftByWatchlist,
   ] = useState<Record<string, Record<string, string>>>({});
-  const [editingStockSubcategoryByWatchlist, setEditingStockSubcategoryByWatchlist] =
-    useState<Record<string, Record<string, boolean>>>({});
-  const [stockSubcategoryDraftByWatchlist, setStockSubcategoryDraftByWatchlist] =
-    useState<Record<string, Record<string, string>>>({});
+  const [
+    editingStockSubcategoryByWatchlist,
+    setEditingStockSubcategoryByWatchlist,
+  ] = useState<Record<string, Record<string, boolean>>>({});
+  const [
+    stockSubcategoryDraftByWatchlist,
+    setStockSubcategoryDraftByWatchlist,
+  ] = useState<Record<string, Record<string, string>>>({});
 
   const showPopup = (message: string) => setPopupMessage(message);
   const requireAdmin = (message = "Admin password required.") => {
@@ -191,35 +194,36 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
     return false;
   };
 
-  const parseNumberInput = (raw: string): number | null => {
-    const s = String(raw || "").trim().toUpperCase();
-    if (!s) return null;
-    const match = s.match(/^(-?\d+(\.\d+)?)([KMB])?$/);
-    if (!match) return null;
-    const base = parseFloat(match[1]);
-    if (isNaN(base)) return null;
-    const suffix = match[3];
-    const mult = suffix === "K" ? 1e3 : suffix === "M" ? 1e6 : suffix === "B" ? 1e9 : 1;
-    return base * mult;
+  // (Removed) international split: we now split by "manual" vs "watchlist" rows.
+
+  const setBoolByWatchlistTicker = (
+    setter: Dispatch<SetStateAction<Record<string, Record<string, boolean>>>>,
+    watchlistName: string,
+    ticker: string,
+    value: boolean,
+  ) => {
+    setter((prev) => ({
+      ...prev,
+      [watchlistName]: {
+        ...(prev[watchlistName] || {}),
+        [ticker]: value,
+      },
+    }));
   };
 
-  const normalizeTickerInputLocal = (raw: string): string => {
-    const input = String(raw || "").trim();
-    if (!input) return "";
-    const upper = input.toUpperCase();
-
-    const yahooKorea = upper.match(/^([0-9A-Z.\-]+)\.(KS|KQ)$/);
-    if (yahooKorea) return `${yahooKorea[1]}:XKRX`;
-
-    const exchPrefixed = upper.match(/^([A-Z]{2,10})\s*:\s*([0-9A-Z.\-]+)$/);
-    if (exchPrefixed) {
-      const exch = exchPrefixed[1];
-      const symbol = exchPrefixed[2];
-      const mic = exch === "KRX" || exch === "KOSPI" || exch === "KOSDAQ" ? "XKRX" : exch;
-      return `${symbol}:${mic}`;
-    }
-
-    return upper;
+  const setStringByWatchlistTicker = (
+    setter: Dispatch<SetStateAction<Record<string, Record<string, string>>>>,
+    watchlistName: string,
+    ticker: string,
+    value: string,
+  ) => {
+    setter((prev) => ({
+      ...prev,
+      [watchlistName]: {
+        ...(prev[watchlistName] || {}),
+        [ticker]: value,
+      },
+    }));
   };
 
   const handleAddManualStock = async (watchlistName: string) => {
@@ -246,7 +250,9 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
     }
 
     const alreadyInTickers = (watchlists[watchlistName] || []).includes(ticker);
-    const alreadyInData = (watchlistData[watchlistName] || []).some((row) => row.Ticker === ticker);
+    const alreadyInData = (watchlistData[watchlistName] || []).some(
+      (row) => row.Ticker === ticker,
+    );
     if (alreadyInTickers || alreadyInData) {
       showPopup(`${ticker} already exists in this watchlist.`);
       return;
@@ -271,32 +277,57 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
     };
 
     setWatchlistData((prev) => ({ ...prev, [watchlistName]: nextData }));
-    setStockDescriptionsByWatchlist((prev) => ({ ...prev, [watchlistName]: nextStockDescriptions }));
+    setStockDescriptionsByWatchlist((prev) => ({
+      ...prev,
+      [watchlistName]: nextStockDescriptions,
+    }));
     setNewManualByWatchlist((prev) => ({
       ...prev,
       [watchlistName]: { ticker: "", currentPrice: "", marketCap: "" },
     }));
 
     try {
-      await saveWatchlist(watchlistName, watchlists[watchlistName] || [], nextData, null, {
-        stockDescriptions: nextStockDescriptions,
-      });
+      await saveWatchlist(
+        watchlistName,
+        watchlists[watchlistName] || [],
+        nextData,
+        null,
+        {
+          stockDescriptions: nextStockDescriptions,
+        },
+      );
     } catch (e: any) {
       showPopup(`Added manually locally but failed to sync DB: ${e.message}`);
     }
   };
 
-  const handleRemoveManualStock = async (watchlistName: string, ticker: string) => {
+  const handleRemoveManualStock = async (
+    watchlistName: string,
+    ticker: string,
+  ) => {
     if (!requireAdmin()) return;
-    const nextData = (watchlistData[watchlistName] || []).filter((row) => row.Ticker !== ticker);
-    const nextStockDescriptions = { ...(stockDescriptionsByWatchlist[watchlistName] || {}) };
+    const nextData = (watchlistData[watchlistName] || []).filter(
+      (row) => row.Ticker !== ticker,
+    );
+    const nextStockDescriptions = {
+      ...(stockDescriptionsByWatchlist[watchlistName] || {}),
+    };
     delete nextStockDescriptions[ticker];
     setWatchlistData((prev) => ({ ...prev, [watchlistName]: nextData }));
-    setStockDescriptionsByWatchlist((prev) => ({ ...prev, [watchlistName]: nextStockDescriptions }));
+    setStockDescriptionsByWatchlist((prev) => ({
+      ...prev,
+      [watchlistName]: nextStockDescriptions,
+    }));
     try {
-      await saveWatchlist(watchlistName, watchlists[watchlistName] || [], nextData, null, {
-        stockDescriptions: nextStockDescriptions,
-      });
+      await saveWatchlist(
+        watchlistName,
+        watchlists[watchlistName] || [],
+        nextData,
+        null,
+        {
+          stockDescriptions: nextStockDescriptions,
+        },
+      );
     } catch (e: any) {
       showPopup(`Removed locally but failed to sync DB: ${e.message}`);
     }
@@ -417,8 +448,11 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
     const nextOrder =
       overrides?.order ?? Math.max(0, watchlistOrder.indexOf(watchlistName));
     const nextCategory =
-      (overrides?.category ?? watchlistCategoryByName[watchlistName] ?? "")
-        .trim() || UNCATEGORIZED;
+      (
+        overrides?.category ??
+        watchlistCategoryByName[watchlistName] ??
+        ""
+      ).trim() || UNCATEGORIZED;
     const nextStockDescriptions =
       overrides?.stockDescriptions ??
       stockDescriptionsByWatchlist[watchlistName] ??
@@ -617,7 +651,9 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
     setExpandedStockByWatchlist(nextExpandedStockByWatchlist);
     setEditingStockByWatchlist(nextEditingStockByWatchlist);
     setStockDescriptionDraftByWatchlist(nextStockDescriptionDraftByWatchlist);
-    setEditingStockSubcategoryByWatchlist(nextEditingStockSubcategoryByWatchlist);
+    setEditingStockSubcategoryByWatchlist(
+      nextEditingStockSubcategoryByWatchlist,
+    );
     setStockSubcategoryDraftByWatchlist(nextStockSubcategoryDraftByWatchlist);
     setExpandedByWatchlist(nextExpandedByWatchlist);
     setEditModeByWatchlist(nextEditModeByWatchlist);
@@ -673,7 +709,9 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
     }
     const alreadyInTickers = (watchlists[watchlistName] || []).includes(ticker);
     const alreadyInManual = (watchlistData[watchlistName] || []).some(
-      (row) => row.Ticker === ticker && !(watchlists[watchlistName] || []).includes(ticker),
+      (row) =>
+        row.Ticker === ticker &&
+        !(watchlists[watchlistName] || []).includes(ticker),
     );
     if (alreadyInTickers || alreadyInManual) {
       showPopup(`${ticker} already exists in this watchlist`);
@@ -1162,6 +1200,10 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
       ...(stockDescriptionsByWatchlist[watchlistName] || {}),
       [ticker]: description,
     };
+    stockDescriptionsByWatchlistRef.current = {
+      ...stockDescriptionsByWatchlistRef.current,
+      [watchlistName]: nextStockDescriptions,
+    };
     setStockDescriptionsByWatchlist((prev) => ({
       ...prev,
       [watchlistName]: nextStockDescriptions,
@@ -1196,33 +1238,30 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
   ) => {
     if (!requireAdmin()) return;
     const live = stockSubcategoriesByWatchlist[watchlistName]?.[ticker] || "";
-    setStockSubcategoryDraftByWatchlist((prev) => ({
-      ...prev,
-      [watchlistName]: {
-        ...(prev[watchlistName] || {}),
-        [ticker]: live,
-      },
-    }));
-    setEditingStockSubcategoryByWatchlist((prev) => ({
-      ...prev,
-      [watchlistName]: {
-        ...(prev[watchlistName] || {}),
-        [ticker]: true,
-      },
-    }));
+    setStringByWatchlistTicker(
+      setStockSubcategoryDraftByWatchlist,
+      watchlistName,
+      ticker,
+      live,
+    );
+    setBoolByWatchlistTicker(
+      setEditingStockSubcategoryByWatchlist,
+      watchlistName,
+      ticker,
+      true,
+    );
   };
 
   const handleCancelEditStockSubcategory = (
     watchlistName: string,
     ticker: string,
   ) => {
-    setEditingStockSubcategoryByWatchlist((prev) => ({
-      ...prev,
-      [watchlistName]: {
-        ...(prev[watchlistName] || {}),
-        [ticker]: false,
-      },
-    }));
+    setBoolByWatchlistTicker(
+      setEditingStockSubcategoryByWatchlist,
+      watchlistName,
+      ticker,
+      false,
+    );
   };
 
   const handleDraftStockSubcategoryChange = (
@@ -1230,13 +1269,12 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
     ticker: string,
     value: string,
   ) => {
-    setStockSubcategoryDraftByWatchlist((prev) => ({
-      ...prev,
-      [watchlistName]: {
-        ...(prev[watchlistName] || {}),
-        [ticker]: value,
-      },
-    }));
+    setStringByWatchlistTicker(
+      setStockSubcategoryDraftByWatchlist,
+      watchlistName,
+      ticker,
+      value,
+    );
   };
 
   const handleSaveStockSubcategory = async (
@@ -1248,6 +1286,10 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
     const nextStockSubcategories = {
       ...(stockSubcategoriesByWatchlist[watchlistName] || {}),
       [ticker]: subcategory,
+    };
+    stockSubcategoriesByWatchlistRef.current = {
+      ...stockSubcategoriesByWatchlistRef.current,
+      [watchlistName]: nextStockSubcategories,
     };
     setStockSubcategoriesByWatchlist((prev) => ({
       ...prev,
@@ -1263,13 +1305,12 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
           stockSubcategories: nextStockSubcategories,
         },
       );
-      setEditingStockSubcategoryByWatchlist((prev) => ({
-        ...prev,
-        [watchlistName]: {
-          ...(prev[watchlistName] || {}),
-          [ticker]: false,
-        },
-      }));
+      setBoolByWatchlistTicker(
+        setEditingStockSubcategoryByWatchlist,
+        watchlistName,
+        ticker,
+        false,
+      );
     } catch (e: any) {
       showPopup(
         `Saved locally but failed to sync stock subcategory: ${e.message}`,
@@ -1539,9 +1580,9 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
                   categoryOrder[0] ||
                   "",
                 stockDescriptions:
-                  stockDescriptionsByWatchlist[watchlistName] || {},
+                  stockDescriptionsByWatchlistRef.current[watchlistName] || {},
                 stockSubcategories:
-                  stockSubcategoriesByWatchlist[watchlistName] || {},
+                  stockSubcategoriesByWatchlistRef.current[watchlistName] || {},
               },
             );
           } catch (e: any) {
@@ -1902,869 +1943,263 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
         const isCategoryExpanded = expandedByCategory[category] ?? true;
 
         return (
-          <div
+          <CategorySection
             key={`category-${category}`}
-            draggable={isAdmin}
+            category={category}
+            isAdmin={isAdmin}
+            isExpanded={isCategoryExpanded}
+            isDragged={draggedCategoryName === category}
+            isDragOver={dragOverCategoryName === category}
+            isEditingName={Boolean(editingCategoryByName[category])}
+            renameDraft={categoryRenameByName[category] || ""}
+            showCreateWatchlist={Boolean(showCreateWatchlistByCategory[category])}
+            newWatchlistName={newWatchlistNameByCategory[category] || ""}
+            watchlistsInCategoryCount={watchlistsInCategory.length}
+            onToggleExpanded={() =>
+              setExpandedByCategory((prev) => ({
+                ...prev,
+                [category]: !isCategoryExpanded,
+              }))
+            }
+            onStartEditName={() => handleStartEditCategoryName(category)}
+            onRenameDraftChange={(value) =>
+              setCategoryRenameByName((prev) => ({ ...prev, [category]: value }))
+            }
+            onSaveName={() => void handleSaveCategoryName(category)}
+            onDelete={() => handleDeleteCategory(category)}
+            onShowCreateWatchlist={() =>
+              setShowCreateWatchlistByCategory((prev) => ({
+                ...prev,
+                [category]: true,
+              }))
+            }
+            onNewWatchlistNameChange={(value) =>
+              setNewWatchlistNameByCategory((prev) => ({
+                ...prev,
+                [category]: value,
+              }))
+            }
+            onCreateWatchlist={() => void handleCreateWatchlist(category)}
+            onCancelCreateWatchlist={() => {
+              setShowCreateWatchlistByCategory((prev) => ({
+                ...prev,
+                [category]: false,
+              }));
+              setNewWatchlistNameByCategory((prev) => ({
+                ...prev,
+                [category]: "",
+              }));
+            }}
             onDragStart={(event) => handleCategoryDragStart(event, category)}
             onDragOver={(event) => handleCategoryDragOver(event, category)}
             onDrop={(event) => void handleCategoryDrop(event, category)}
             onDragEnd={handleCategoryDragEnd}
-            style={{
-              marginBottom: "1.25rem",
-              border:
-                dragOverCategoryName === category
-                  ? "2px dashed #111827"
-                  : "1px solid #e2e8f0",
-              borderRadius: "8px",
-              padding: "1rem",
-              backgroundColor: "#f8fafc",
-              opacity: draggedCategoryName === category ? 0.65 : 1,
-            }}
           >
-            <div
-              onClick={() =>
-                setExpandedByCategory((prev) => ({
-                  ...prev,
-                  [category]: !isCategoryExpanded,
-                }))
-              }
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: isCategoryExpanded ? "0.75rem" : 0,
-                gap: "0.75rem",
-                flexWrap: "wrap",
-                cursor: "pointer",
-              }}
-            >
-              <div>
-                {isAdmin && editingCategoryByName[category] ? (
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: "0.4rem",
-                      alignItems: "center",
-                      flexWrap: "wrap",
-                      marginBottom: "0.25rem",
-                    }}
-                  >
-                    <input
-                      type="text"
-                      value={categoryRenameByName[category] || ""}
-                      onChange={(e) =>
-                        setCategoryRenameByName((prev) => ({
-                          ...prev,
-                          [category]: e.target.value,
-                        }))
-                      }
-                      onClick={(e) => e.stopPropagation()}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          void handleSaveCategoryName(category);
-                        }
-                      }}
-                      style={{
-                        padding: "0.35rem 0.5rem",
-                        borderRadius: "4px",
-                        border: "1px solid #ccc",
-                        minWidth: "180px",
-                      }}
-                    />
-                  </div>
-                ) : (
-                  <h2
-                    onClick={(e) => {
-                      if (!isAdmin) return;
-                      e.stopPropagation();
-                      handleStartEditCategoryName(category);
-                    }}
-                    style={{
-                      fontFamily: "Montserrat, sans-serif",
-                      fontSize: "1.1rem",
-                      marginBottom: "0.25rem",
-                    }}
-                  >
-                    {category}
-                  </h2>
-                )}
-                {isAdmin && isCategoryExpanded && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setShowCreateWatchlistByCategory((prev) => ({
-                        ...prev,
-                        [category]: true,
-                      }));
-                    }}
-                    style={{
-                      marginTop: "0.35rem",
-                      padding: "0.5rem 0.8rem",
-                      background: "#ffffff",
-                      color: "#374151",
-                      border: "1px solid #d1d5db",
-                      borderRadius: "6px",
-                      cursor: "pointer",
-                      fontSize: "0.85rem",
-                      fontWeight: 500,
-                    }}
-                  >
-                    Create Watchlist
-                  </button>
-                )}
-              </div>
+            {watchlistsInCategory.map((watchlistName) => {
+              const isExpanded = expandedByWatchlist[watchlistName] ?? true;
+              const isEditing = editModeByWatchlist[watchlistName] ?? false;
+              const isBusy = loadingAll || validatingWatchlist === watchlistName;
+              const tickers = watchlists[watchlistName] || [];
+              const currentData = watchlistData[watchlistName] || [];
+              const manualRows = currentData.filter(
+                (row) => !tickers.includes(row.Ticker),
+              );
 
-              {isAdmin && isCategoryExpanded && (
-                <div
-                  style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}
-                >
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteCategory(category);
-                    }}
-                    style={{
-                      ...iconButtonBaseStyle,
-                      color: "#b91c1c",
-                      border: "1px solid #fecaca",
-                      fontSize: "1rem",
-                    }}
-                    title="Delete category"
-                    aria-label="Delete category"
-                  >
-                    ×
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {isCategoryExpanded && (
-              <>
-                {showCreateWatchlistByCategory[category] && (
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: "0.5rem",
-                      alignItems: "center",
-                      flexWrap: "wrap",
-                      marginBottom: "0.75rem",
-                    }}
-                  >
-                    <input
-                      type="text"
-                      value={newWatchlistNameByCategory[category] || ""}
-                      onChange={(e) =>
-                        setNewWatchlistNameByCategory((prev) => ({
-                          ...prev,
-                          [category]: e.target.value,
-                        }))
-                      }
-                      placeholder="Watchlist Name"
-                      style={{
-                        padding: "0.75rem",
-                        borderRadius: "4px",
-                        border: "1px solid #ccc",
-                        minWidth: "220px",
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          void handleCreateWatchlist(category);
-                        }
-                      }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => void handleCreateWatchlist(category)}
-                      style={primaryButtonStyle}
-                    >
-                      Create
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowCreateWatchlistByCategory((prev) => ({
-                          ...prev,
-                          [category]: false,
-                        }));
-                        setNewWatchlistNameByCategory((prev) => ({
-                          ...prev,
-                          [category]: "",
-                        }));
-                      }}
-                      style={cancelButtonStyle}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                )}
-
-                {watchlistsInCategory.length === 0 && (
-                  <div
-                    style={{
-                      padding: "0.75rem",
-                      color: "#6b7280",
-                      fontSize: "0.9rem",
-                    }}
-                  >
-                    No watchlists in this category.
-                  </div>
-                )}
-                {watchlistsInCategory.map((watchlistName) => {
-                  const isExpanded = expandedByWatchlist[watchlistName] ?? true;
-                  const isEditing = editModeByWatchlist[watchlistName] ?? false;
-                  const isBusy =
-                    loadingAll || validatingWatchlist === watchlistName;
-                  const tickers = watchlists[watchlistName] || [];
-                  const currentData = watchlistData[watchlistName] || [];
-                  const manualRows = currentData.filter(
-                    (row) => !tickers.includes(row.Ticker),
-                  );
-
-                  return (
-                    <div
-                      key={watchlistName}
-                      draggable={isAdmin}
-                      onDragStart={(event) =>
-                        handleWatchlistDragStart(event, watchlistName)
-                      }
-                      onDragOver={(event) =>
-                        handleWatchlistDragOver(event, watchlistName)
-                      }
-                      onDrop={(event) =>
-                        void handleWatchlistDrop(event, watchlistName)
-                      }
-                      onDragEnd={handleWatchlistDragEnd}
-                      style={{
-                        marginBottom: "1rem",
-                        border:
-                          dragOverWatchlistName === watchlistName
-                            ? "2px dashed #111827"
-                            : "1px solid #e2e8f0",
-                        borderRadius: "8px",
-                        padding: "1rem",
-                        backgroundColor: "#ffffff",
-                        opacity:
-                          draggedWatchlistName === watchlistName ? 0.65 : 1,
-                      }}
-                    >
-                      <div
-                        onClick={() =>
-                          setExpandedByWatchlist((prev) => ({
-                            ...prev,
-                            [watchlistName]: !isExpanded,
-                          }))
-                        }
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          marginBottom: isExpanded ? "1rem" : 0,
-                          gap: "0.75rem",
-                          flexWrap: "wrap",
-                          cursor: "pointer",
-                        }}
-                      >
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "0.5rem",
-                            flexWrap: "wrap",
-                          }}
-                        >
-                          {isAdmin &&
-                          editingWatchlistNameByName[watchlistName] ? (
-                            <input
-                              type="text"
-                              value={
-                                watchlistNameDraftByName[watchlistName] ??
-                                watchlistName
-                              }
-                              onChange={(e) =>
-                                setWatchlistNameDraftByName((prev) => ({
-                                  ...prev,
-                                  [watchlistName]: e.target.value,
-                                }))
-                              }
-                              onClick={(e) => e.stopPropagation()}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") {
-                                  e.preventDefault();
-                                  void handleSaveWatchlistName(watchlistName);
-                                }
-                              }}
-                              style={{
-                                padding: "0.35rem 0.5rem",
-                                borderRadius: "4px",
-                                border: "1px solid #ccc",
-                                minWidth: "220px",
-                              }}
-                            />
-                          ) : (
-                            <h2
-                              onClick={(e) => {
-                                if (!isAdmin) return;
-                                e.stopPropagation();
-                                setWatchlistNameDraftByName((prev) => ({
-                                  ...prev,
-                                  [watchlistName]: watchlistName,
-                                }));
-                                setEditingWatchlistNameByName((prev) => ({
-                                  ...prev,
-                                  [watchlistName]: true,
-                                }));
-                              }}
-                              style={{
-                                fontFamily: "Montserrat, sans-serif",
-                                fontSize: "1.2rem",
-                                marginBottom: "0.25rem",
-                              }}
-                            >
-                              {watchlistName}
-                            </h2>
-                          )}
-                        </div>
-
-                        {isAdmin && isExpanded && (
-                          <div
-                            style={{
-                              display: "flex",
-                              gap: "0.5rem",
-                              flexWrap: "wrap",
-                            }}
-                          >
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (isEditing) {
-                                  setEditModeByWatchlist((prev) => ({
-                                    ...prev,
-                                    [watchlistName]: false,
-                                  }));
-                                } else {
-                                  setEditModeByWatchlist((prev) => ({
-                                    ...prev,
-                                    [watchlistName]: true,
-                                  }));
-                                }
-                              }}
-                              style={{
-                                ...iconButtonBaseStyle,
-                                color: isEditing ? "#047857" : "#374151",
-                                border: "1px solid #d1d5db",
-                                fontSize: "0.9rem",
-                              }}
-                              title={
-                                isEditing ? "Done editing" : "Edit watchlist"
-                              }
-                              aria-label={
-                                isEditing ? "Done editing" : "Edit watchlist"
-                              }
-                            >
-                              {isEditing ? "✓" : "✎"}
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteWatchlist(watchlistName);
-                              }}
-                              disabled={isBusy}
-                              style={{
-                                ...iconButtonBaseStyle,
-                                color: "#b91c1c",
-                                border: "1px solid #fecaca",
-                                cursor: isBusy ? "not-allowed" : "pointer",
-                                fontSize: "1rem",
-                                opacity: isBusy ? 0.6 : 1,
-                              }}
-                              title="Delete watchlist"
-                              aria-label="Delete watchlist"
-                            >
-                              ×
-                            </button>
-                          </div>
-                        )}
-
-                        {isExpanded && (
-                          <div
-                            style={{
-                              width: "100%",
-                              marginTop: "0.5rem",
-                              display: "flex",
-                              gap: "0.75rem",
-                              flexWrap: "wrap",
-                            }}
-                          >
-                            <div style={{ flex: 1, minWidth: "260px" }}>
-                              {!isAdmin ||
-                              !editingWatchlistDescriptionByName[
-                                watchlistName
-                              ] ? (
-                                <div
-                                  onClick={(e) => {
-                                    if (!isAdmin) return;
-                                    e.stopPropagation();
-                                    setWatchlistDescriptionDraftByName(
-                                      (prev) => ({
-                                        ...prev,
-                                        [watchlistName]:
-                                          watchlistDescriptionByName[
-                                            watchlistName
-                                          ] || "",
-                                      }),
-                                    );
-                                    setEditingWatchlistDescriptionByName(
-                                      (prev) => ({
-                                        ...prev,
-                                        [watchlistName]: true,
-                                      }),
-                                    );
-                                  }}
-                                  style={{
-                                    color: "#374151",
-                                    whiteSpace: "pre-wrap",
-                                    flex: 1,
-                                    fontSize: "0.9rem",
-                                    cursor: isAdmin ? "text" : "default",
-                                  }}
-                                >
-                                  <div>
-                                    {(
-                                      watchlistDescriptionByName[
-                                        watchlistName
-                                      ] || ""
-                                    ).trim() || "No description"}
-                                  </div>
-                                </div>
-                              ) : (
-                                <input
-                                  type="text"
-                                  value={
-                                    watchlistDescriptionDraftByName[
-                                      watchlistName
-                                    ] || ""
-                                  }
-                                  onChange={(e) =>
-                                    setWatchlistDescriptionDraftByName(
-                                      (prev) => ({
-                                        ...prev,
-                                        [watchlistName]: e.target.value,
-                                      }),
-                                    )
-                                  }
-                                  onClick={(e) => e.stopPropagation()}
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Enter") {
-                                      e.preventDefault();
-                                      void handleSaveWatchlistDescription(
-                                        watchlistName,
-                                      );
-                                    }
-                                  }}
-                                  onBlur={() => {
-                                    void handleSaveWatchlistDescription(
-                                      watchlistName,
-                                    );
-                                  }}
-                                  style={{
-                                    width: "100%",
-                                    minHeight: "42px",
-                                    padding: "0.45rem 0.55rem",
-                                    borderRadius: "4px",
-                                    border: "1px solid #ccc",
-                                  }}
-                                />
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      {isExpanded && (
-                        <>
-                          {isAdmin && isEditing && (
-                            <div
-                              style={{
-                                marginBottom: "1rem",
-                                padding: "1rem",
-                                border: "1px solid #e5e7eb",
-                                borderRadius: "6px",
-                                backgroundColor: "#fafafa",
-                              }}
-                            >
-                              <div
-                                style={{
-                                  display: "flex",
-                                  gap: "0.5rem",
-                                  marginBottom: "0.75rem",
-                                  flexWrap: "wrap",
-                                }}
-                              >
-                                <input
-                                  type="text"
-                                  value={
-                                    newTickerByWatchlist[watchlistName] || ""
-                                  }
-                                  onChange={(e) =>
-                                    setNewTickerByWatchlist((prev) => ({
-                                      ...prev,
-                                      [watchlistName]:
-                                        e.target.value.toUpperCase(),
-                                    }))
-                                  }
-                                  placeholder="Add Ticker"
-                                  style={{
-                                    padding: "0.65rem",
-                                    borderRadius: "4px",
-                                    border: "1px solid #ccc",
-                                    width: "150px",
-                                  }}
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Enter") {
-                                      e.preventDefault();
-                                      handleAddTicker(watchlistName);
-                                    }
-                                  }}
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => handleAddTicker(watchlistName)}
-                                  disabled={isBusy}
-                                  style={{
-                                    padding: "0.65rem 1rem",
-                                    backgroundColor: "#000000",
-                                    color: "#ffffff",
-                                    border: "none",
-                                    borderRadius: "6px",
-                                    cursor: isBusy ? "not-allowed" : "pointer",
-                                    fontSize: "0.85rem",
-                                    fontWeight: 600,
-                                    opacity: isBusy ? 0.6 : 1,
-                                  }}
-                                >
-                                  {validatingWatchlist === watchlistName
-                                    ? "Validating..."
-                                    : "Add Ticker"}
-                                </button>
-                              </div>
-
-                              <div
-                                style={{
-                                  display: "flex",
-                                  gap: "0.5rem",
-                                  marginBottom: "0.75rem",
-                                  flexWrap: "wrap",
-                                  alignItems: "center",
-                                }}
-                              >
-                                <input
-                                  type="text"
-                                  value={newManualByWatchlist[watchlistName]?.ticker || ""}
-                                  onChange={(e) =>
-                                    setNewManualByWatchlist((prev) => ({
-                                      ...prev,
-                                      [watchlistName]: {
-                                        ticker: e.target.value.toUpperCase(),
-                                        currentPrice:
-                                          prev[watchlistName]?.currentPrice || "",
-                                        marketCap:
-                                          prev[watchlistName]?.marketCap || "",
-                                      },
-                                    }))
-                                  }
-                                  placeholder="Manual Global Ticker (e.g. KRX:005930)"
-                                  style={{
-                                    padding: "0.65rem",
-                                    borderRadius: "4px",
-                                    border: "1px solid #ccc",
-                                    width: "240px",
-                                  }}
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Enter") {
-                                      e.preventDefault();
-                                      void handleAddManualStock(watchlistName);
-                                    }
-                                  }}
-                                />
-                                <input
-                                  type="text"
-                                  value={newManualByWatchlist[watchlistName]?.currentPrice || ""}
-                                  onChange={(e) =>
-                                    setNewManualByWatchlist((prev) => ({
-                                      ...prev,
-                                      [watchlistName]: {
-                                        ticker: prev[watchlistName]?.ticker || "",
-                                        currentPrice: e.target.value,
-                                        marketCap: prev[watchlistName]?.marketCap || "",
-                                      },
-                                    }))
-                                  }
-                                  placeholder="Current Price"
-                                  style={{
-                                    padding: "0.65rem",
-                                    borderRadius: "4px",
-                                    border: "1px solid #ccc",
-                                    width: "140px",
-                                  }}
-                                />
-                                <input
-                                  type="text"
-                                  value={newManualByWatchlist[watchlistName]?.marketCap || ""}
-                                  onChange={(e) =>
-                                    setNewManualByWatchlist((prev) => ({
-                                      ...prev,
-                                      [watchlistName]: {
-                                        ticker: prev[watchlistName]?.ticker || "",
-                                        currentPrice: prev[watchlistName]?.currentPrice || "",
-                                        marketCap: e.target.value.toUpperCase(),
-                                      },
-                                    }))
-                                  }
-                                  placeholder="Market Cap (e.g. 350B)"
-                                  style={{
-                                    padding: "0.65rem",
-                                    borderRadius: "4px",
-                                    border: "1px solid #ccc",
-                                    width: "170px",
-                                  }}
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => void handleAddManualStock(watchlistName)}
-                                  disabled={isBusy}
-                                  style={{
-                                    padding: "0.65rem 1rem",
-                                    backgroundColor: "#111827",
-                                    color: "#ffffff",
-                                    border: "none",
-                                    borderRadius: "6px",
-                                    cursor: isBusy ? "not-allowed" : "pointer",
-                                    fontSize: "0.85rem",
-                                    fontWeight: 600,
-                                    opacity: isBusy ? 0.6 : 1,
-                                  }}
-                                >
-                                  Add Manual Stock
-                                </button>
-                              </div>
-
-                              <div
-                                style={{
-                                  display: "flex",
-                                  flexWrap: "wrap",
-                                  gap: "0.5rem",
-                                }}
-                              >
-                                {tickers.map((ticker) => (
-                                  <div
-                                    key={`${watchlistName}-${ticker}`}
-                                    style={{
-                                      padding: "0.4rem 0.75rem",
-                                      background: "#f0f0f0",
-                                      borderRadius: "4px",
-                                      display: "flex",
-                                      alignItems: "center",
-                                      gap: "0.4rem",
-                                    }}
-                                  >
-                                    <span>{ticker}</span>
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        handleRemoveTicker(
-                                          watchlistName,
-                                          ticker,
-                                        )
-                                      }
-                                      style={{
-                                        background: "none",
-                                        border: "none",
-                                        color: "#dc2626",
-                                        cursor: "pointer",
-                                        fontSize: "1rem",
-                                        lineHeight: 1,
-                                      }}
-                                    >
-                                      ×
-                                    </button>
-                                  </div>
-                                ))}
-                              </div>
-
-                              {manualRows.length > 0 && (
-                                <div style={{ marginTop: "0.75rem" }}>
-                                  <div
-                                    style={{
-                                      fontSize: "0.8rem",
-                                      fontWeight: 600,
-                                      color: "#374151",
-                                      marginBottom: "0.4rem",
-                                    }}
-                                  >
-                                    Manual global stocks (excluded from refresh)
-                                  </div>
-                                  <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
-                                    {manualRows.map((row) => (
-                                      <div
-                                        key={`${watchlistName}-manual-${row.Ticker}`}
-                                        style={{
-                                          padding: "0.4rem 0.75rem",
-                                          background: "#eef2ff",
-                                          borderRadius: "4px",
-                                          display: "flex",
-                                          alignItems: "center",
-                                          gap: "0.4rem",
-                                        }}
-                                      >
-                                        <span>{row.Ticker}</span>
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            void handleRemoveManualStock(watchlistName, row.Ticker)
-                                          }
-                                          style={{
-                                            background: "none",
-                                            border: "none",
-                                            color: "#dc2626",
-                                            cursor: "pointer",
-                                            fontSize: "1rem",
-                                            lineHeight: 1,
-                                          }}
-                                          title="Remove manual stock"
-                                          aria-label="Remove manual stock"
-                                        >
-                                          ×
-                                        </button>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          )}
-
-                          <CustomWatchlistsTable
-                            data={currentData.map((row) => ({
-                              ...row,
-                              Description:
-                                stockDescriptionsByWatchlist[watchlistName]?.[
-                                  row.Ticker
-                                ] || "",
-                              Subcategory:
-                                stockSubcategoriesByWatchlist[watchlistName]?.[
-                                  row.Ticker
-                                ] || "",
-                            }))}
-                            sortColumn={
-                              sortColumnByWatchlist[watchlistName] || ""
-                            }
-                            setSortColumn={(value) =>
-                              setSortColumnByWatchlist((prev) => ({
-                                ...prev,
-                                [watchlistName]: value,
-                              }))
-                            }
-                            sortAscending={
-                              sortAscendingByWatchlist[watchlistName] ?? true
-                            }
-                            setSortAscending={(value) =>
-                              setSortAscendingByWatchlist((prev) => ({
-                                ...prev,
-                                [watchlistName]: value,
-                              }))
-                            }
-                            formatValue={formatValue}
-                            isAdmin={isAdmin}
-                            showCustomDatesChange={useCustomRange}
-                            expandedByTicker={
-                              expandedStockByWatchlist[watchlistName] || {}
-                            }
-                            editingByTicker={
-                              editingStockByWatchlist[watchlistName] || {}
-                            }
-                            draftDescriptionByTicker={
-                              stockDescriptionDraftByWatchlist[watchlistName] ||
-                              {}
-                            }
-                            onToggleTickerExpand={(ticker) =>
-                              handleToggleStockRowExpand(watchlistName, ticker)
-                            }
-                            onStartEditDescription={(ticker) =>
-                              handleStartEditStockDescription(
-                                watchlistName,
-                                ticker,
-                              )
-                            }
-                            onCancelEditDescription={(ticker) =>
-                              handleCancelEditStockDescription(
-                                watchlistName,
-                                ticker,
-                              )
-                            }
-                            onDraftDescriptionChange={(ticker, value) =>
-                              handleDraftStockDescriptionChange(
-                                watchlistName,
-                                ticker,
-                                value,
-                              )
-                            }
-                            onSaveDescription={(ticker, value) =>
-                              void handleSaveStockDescription(
-                                watchlistName,
-                                ticker,
-                                value,
-                              )
-                            }
-                            editingSubcategoryByTicker={
-                              editingStockSubcategoryByWatchlist[watchlistName] ||
-                              {}
-                            }
-                            draftSubcategoryByTicker={
-                              stockSubcategoryDraftByWatchlist[watchlistName] ||
-                              {}
-                            }
-                            onStartEditSubcategory={(ticker) =>
-                              handleStartEditStockSubcategory(
-                                watchlistName,
-                                ticker,
-                              )
-                            }
-                            onCancelEditSubcategory={(ticker) =>
-                              handleCancelEditStockSubcategory(
-                                watchlistName,
-                                ticker,
-                              )
-                            }
-                            onDraftSubcategoryChange={(ticker, value) =>
-                              handleDraftStockSubcategoryChange(
-                                watchlistName,
-                                ticker,
-                                value,
-                              )
-                            }
-                            onSaveSubcategory={(ticker, value) =>
-                              void handleSaveStockSubcategory(
-                                watchlistName,
-                                ticker,
-                                value,
-                              )
-                            }
-                          />
-                        </>
-                      )}
-                    </div>
-                  );
-                })}
-              </>
-            )}
-          </div>
+              return (
+                <WatchlistSection
+                  watchlistName={watchlistName}
+                  isAdmin={isAdmin}
+                  isExpanded={isExpanded}
+                  isEditing={isEditing}
+                  isBusy={isBusy}
+                  isDragOver={dragOverWatchlistName === watchlistName}
+                  isDragged={draggedWatchlistName === watchlistName}
+                  tickers={tickers}
+                  currentData={currentData}
+                  manualRows={manualRows}
+                  watchlistNameDraft={
+                    watchlistNameDraftByName[watchlistName] ?? watchlistName
+                  }
+                  editingWatchlistName={Boolean(
+                    editingWatchlistNameByName[watchlistName],
+                  )}
+                  watchlistDescription={
+                    watchlistDescriptionByName[watchlistName] || ""
+                  }
+                  watchlistDescriptionDraft={
+                    watchlistDescriptionDraftByName[watchlistName] || ""
+                  }
+                  editingWatchlistDescription={Boolean(
+                    editingWatchlistDescriptionByName[watchlistName],
+                  )}
+                  newTicker={newTickerByWatchlist[watchlistName] || ""}
+                  newManualTicker={
+                    newManualByWatchlist[watchlistName]?.ticker || ""
+                  }
+                  newManualCurrentPrice={
+                    newManualByWatchlist[watchlistName]?.currentPrice || ""
+                  }
+                  newManualMarketCap={
+                    newManualByWatchlist[watchlistName]?.marketCap || ""
+                  }
+                  sortColumn={sortColumnByWatchlist[watchlistName] || ""}
+                  sortAscending={sortAscendingByWatchlist[watchlistName] ?? true}
+                  useCustomRange={useCustomRange}
+                  formatValue={formatValue}
+                  stockDescriptionsByWatchlist={stockDescriptionsByWatchlist}
+                  stockSubcategoriesByWatchlist={stockSubcategoriesByWatchlist}
+                  expandedStockByWatchlist={expandedStockByWatchlist}
+                  editingStockByWatchlist={editingStockByWatchlist}
+                  stockDescriptionDraftByWatchlist={stockDescriptionDraftByWatchlist}
+                  editingStockSubcategoryByWatchlist={
+                    editingStockSubcategoryByWatchlist
+                  }
+                  stockSubcategoryDraftByWatchlist={stockSubcategoryDraftByWatchlist}
+                  onDragStart={(event) =>
+                    handleWatchlistDragStart(event, watchlistName)
+                  }
+                  onDragOver={(event) =>
+                    handleWatchlistDragOver(event, watchlistName)
+                  }
+                  onDrop={(event) => void handleWatchlistDrop(event, watchlistName)}
+                  onDragEnd={handleWatchlistDragEnd}
+                  onToggleExpanded={() =>
+                    setExpandedByWatchlist((prev) => ({
+                      ...prev,
+                      [watchlistName]: !isExpanded,
+                    }))
+                  }
+                  onStartEditWatchlistName={() => {
+                    setWatchlistNameDraftByName((prev) => ({
+                      ...prev,
+                      [watchlistName]: watchlistName,
+                    }));
+                    setEditingWatchlistNameByName((prev) => ({
+                      ...prev,
+                      [watchlistName]: true,
+                    }));
+                  }}
+                  onWatchlistNameDraftChange={(value) =>
+                    setWatchlistNameDraftByName((prev) => ({
+                      ...prev,
+                      [watchlistName]: value,
+                    }))
+                  }
+                  onSaveWatchlistName={() => void handleSaveWatchlistName(watchlistName)}
+                  onToggleEditMode={() =>
+                    setEditModeByWatchlist((prev) => ({
+                      ...prev,
+                      [watchlistName]: !isEditing,
+                    }))
+                  }
+                  onDeleteWatchlist={() => handleDeleteWatchlist(watchlistName)}
+                  onStartEditWatchlistDescription={() => {
+                    setWatchlistDescriptionDraftByName((prev) => ({
+                      ...prev,
+                      [watchlistName]:
+                        watchlistDescriptionByName[watchlistName] || "",
+                    }));
+                    setEditingWatchlistDescriptionByName((prev) => ({
+                      ...prev,
+                      [watchlistName]: true,
+                    }));
+                  }}
+                  onWatchlistDescriptionDraftChange={(value) =>
+                    setWatchlistDescriptionDraftByName((prev) => ({
+                      ...prev,
+                      [watchlistName]: value,
+                    }))
+                  }
+                  onSaveWatchlistDescription={() =>
+                    void handleSaveWatchlistDescription(watchlistName)
+                  }
+                  onNewTickerChange={(value) =>
+                    setNewTickerByWatchlist((prev) => ({
+                      ...prev,
+                      [watchlistName]: value,
+                    }))
+                  }
+                  onAddTicker={() => handleAddTicker(watchlistName)}
+                  onNewManualTickerChange={(value) =>
+                    setNewManualByWatchlist((prev) => ({
+                      ...prev,
+                      [watchlistName]: {
+                        ticker: value,
+                        currentPrice: prev[watchlistName]?.currentPrice || "",
+                        marketCap: prev[watchlistName]?.marketCap || "",
+                      },
+                    }))
+                  }
+                  onNewManualCurrentPriceChange={(value) =>
+                    setNewManualByWatchlist((prev) => ({
+                      ...prev,
+                      [watchlistName]: {
+                        ticker: prev[watchlistName]?.ticker || "",
+                        currentPrice: value,
+                        marketCap: prev[watchlistName]?.marketCap || "",
+                      },
+                    }))
+                  }
+                  onNewManualMarketCapChange={(value) =>
+                    setNewManualByWatchlist((prev) => ({
+                      ...prev,
+                      [watchlistName]: {
+                        ticker: prev[watchlistName]?.ticker || "",
+                        currentPrice: prev[watchlistName]?.currentPrice || "",
+                        marketCap: value,
+                      },
+                    }))
+                  }
+                  onAddManualStock={() => void handleAddManualStock(watchlistName)}
+                  onRemoveTicker={(ticker) =>
+                    handleRemoveTicker(watchlistName, ticker)
+                  }
+                  onRemoveManualStock={(ticker) =>
+                    void handleRemoveManualStock(watchlistName, ticker)
+                  }
+                  onSetSortColumn={(value) =>
+                    setSortColumnByWatchlist((prev) => ({
+                      ...prev,
+                      [watchlistName]: value,
+                    }))
+                  }
+                  onSetSortAscending={(value) =>
+                    setSortAscendingByWatchlist((prev) => ({
+                      ...prev,
+                      [watchlistName]: value,
+                    }))
+                  }
+                  onToggleTickerExpand={(ticker) =>
+                    handleToggleStockRowExpand(watchlistName, ticker)
+                  }
+                  onStartEditDescription={(ticker) =>
+                    handleStartEditStockDescription(watchlistName, ticker)
+                  }
+                  onCancelEditDescription={(ticker) =>
+                    handleCancelEditStockDescription(watchlistName, ticker)
+                  }
+                  onDraftDescriptionChange={(ticker, value) =>
+                    handleDraftStockDescriptionChange(watchlistName, ticker, value)
+                  }
+                  onSaveDescription={(ticker, value) =>
+                    void handleSaveStockDescription(watchlistName, ticker, value)
+                  }
+                  onStartEditSubcategory={(ticker) =>
+                    handleStartEditStockSubcategory(watchlistName, ticker)
+                  }
+                  onCancelEditSubcategory={(ticker) =>
+                    handleCancelEditStockSubcategory(watchlistName, ticker)
+                  }
+                  onDraftSubcategoryChange={(ticker, value) =>
+                    handleDraftStockSubcategoryChange(watchlistName, ticker, value)
+                  }
+                  onSaveSubcategory={(ticker, value) =>
+                    void handleSaveStockSubcategory(watchlistName, ticker, value)
+                  }
+                />
+              );
+            })}
+          </CategorySection>
         );
       })}
 

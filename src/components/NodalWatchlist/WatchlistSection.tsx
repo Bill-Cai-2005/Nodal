@@ -1,4 +1,4 @@
-import type { DragEvent } from "react";
+import { useMemo, useState, type DragEvent } from "react";
 import type { StockData } from "../../utils/polygonApi";
 import CustomWatchlistsTable from "./CustomWatchlistsTable";
 import ManualCustomStocksTable from "./ManualCustomStocksTable";
@@ -25,7 +25,6 @@ type Props = {
 
   newTicker: string;
   newManualTicker: string;
-  newManualCurrentPrice: string;
   newManualMarketCap: string;
 
   sortColumn: string;
@@ -54,7 +53,7 @@ type Props = {
   onToggleEditMode: () => void;
   onDeleteWatchlist: () => void;
 
-  onStartEditWatchlistDescription: () => void;
+  onCancelEditWatchlistDescription: () => void;
   onWatchlistDescriptionDraftChange: (value: string) => void;
   onSaveWatchlistDescription: () => void;
 
@@ -62,7 +61,6 @@ type Props = {
   onAddTicker: () => void;
 
   onNewManualTickerChange: (value: string) => void;
-  onNewManualCurrentPriceChange: (value: string) => void;
   onNewManualMarketCapChange: (value: string) => void;
   onAddManualStock: () => void;
 
@@ -111,7 +109,6 @@ const WatchlistSection = ({
   editingWatchlistDescription,
   newTicker,
   newManualTicker,
-  newManualCurrentPrice,
   newManualMarketCap,
   sortColumn,
   sortAscending,
@@ -134,13 +131,12 @@ const WatchlistSection = ({
   onSaveWatchlistName,
   onToggleEditMode,
   onDeleteWatchlist,
-  onStartEditWatchlistDescription,
+  onCancelEditWatchlistDescription,
   onWatchlistDescriptionDraftChange,
   onSaveWatchlistDescription,
   onNewTickerChange,
   onAddTicker,
   onNewManualTickerChange,
-  onNewManualCurrentPriceChange,
   onNewManualMarketCapChange,
   onAddManualStock,
   onRemoveTicker,
@@ -157,6 +153,19 @@ const WatchlistSection = ({
   onDraftSubcategoryChange,
   onSaveSubcategory,
 }: Props) => {
+  const [isWatchlistDescriptionExpanded, setIsWatchlistDescriptionExpanded] =
+    useState(false);
+
+  const trimmedWatchlistDescription = useMemo(
+    () => (watchlistDescription || "").trim(),
+    [watchlistDescription],
+  );
+  const shouldShowWatchlistDescriptionToggle = useMemo(() => {
+    if (!trimmedWatchlistDescription) return false;
+    if (trimmedWatchlistDescription.includes("\n")) return true;
+    return trimmedWatchlistDescription.length > 160;
+  }, [trimmedWatchlistDescription]);
+
   return (
     <div
       draggable={isAdmin}
@@ -185,7 +194,14 @@ const WatchlistSection = ({
           cursor: "pointer",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "0.5rem",
+            flexWrap: "wrap",
+          }}
+        >
           {isAdmin && editingWatchlistName ? (
             <input
               type="text"
@@ -269,46 +285,157 @@ const WatchlistSection = ({
         )}
 
         {!isExpanded ? null : (
-          <div style={{ width: "100%", marginTop: "0.5rem", display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+          <div
+            style={{
+              width: "100%",
+              marginTop: "0.5rem",
+              display: "flex",
+              gap: "0.75rem",
+              flexWrap: "wrap",
+            }}
+          >
             <div style={{ flex: 1, minWidth: "260px" }}>
               {!isAdmin || !editingWatchlistDescription ? (
                 <div
-                  onClick={(e) => {
-                    if (!isAdmin) return;
-                    e.stopPropagation();
-                    onStartEditWatchlistDescription();
-                  }}
                   style={{
                     color: "#374151",
                     whiteSpace: "pre-wrap",
                     flex: 1,
                     fontSize: "0.9rem",
-                    cursor: isAdmin ? "text" : "default",
+                    cursor: "default",
                   }}
                 >
-                  <div>{watchlistDescription.trim() || "No description"}</div>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "baseline",
+                      gap: "0.4rem",
+                      minWidth: 0,
+                    }}
+                  >
+                    <div
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        ...(isWatchlistDescriptionExpanded
+                          ? {}
+                          : {
+                              display: "-webkit-box",
+                              WebkitLineClamp: 2,
+                              WebkitBoxOrient: "vertical",
+                              overflow: "hidden",
+                            }),
+                      }}
+                    >
+                      {trimmedWatchlistDescription || "No description"}
+                    </div>
+
+                    {shouldShowWatchlistDescriptionToggle && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsWatchlistDescriptionExpanded((prev) => !prev);
+                        }}
+                        style={{
+                          padding: 0,
+                          marginRight: "0.6rem",
+                          border: "none",
+                          background: "transparent",
+                          color: "#6b7280",
+                          fontSize: "0.75rem",
+                          fontWeight: 600,
+                          cursor: "pointer",
+                          lineHeight: 1,
+                          flexShrink: 0,
+                        }}
+                        aria-label={
+                          isWatchlistDescriptionExpanded
+                            ? "Collapse description"
+                            : "Expand description"
+                        }
+                        title={
+                          isWatchlistDescriptionExpanded
+                            ? "Show less"
+                            : "Show more"
+                        }
+                      >
+                        {isWatchlistDescriptionExpanded
+                          ? "Hide Subcategory Description"
+                          : "Show Subcategory Description"}
+                      </button>
+                    )}
+                  </div>
                 </div>
               ) : (
-                <input
-                  type="text"
-                  value={watchlistDescriptionDraft}
-                  onChange={(e) => onWatchlistDescriptionDraftChange(e.target.value)}
-                  onClick={(e) => e.stopPropagation()}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      onSaveWatchlistDescription();
+                <div onClick={(e) => e.stopPropagation()}>
+                  <textarea
+                    value={watchlistDescriptionDraft}
+                    onChange={(e) =>
+                      onWatchlistDescriptionDraftChange(e.target.value)
                     }
-                  }}
-                  onBlur={onSaveWatchlistDescription}
-                  style={{
-                    width: "100%",
-                    minHeight: "42px",
-                    padding: "0.45rem 0.55rem",
-                    borderRadius: "4px",
-                    border: "1px solid #ccc",
-                  }}
-                />
+                    onInput={(e) => {
+                      const target = e.currentTarget;
+                      target.style.height = "auto";
+                      target.style.height = `${target.scrollHeight}px`;
+                    }}
+                    rows={2}
+                    style={{
+                      width: "100%",
+                      minHeight: "64px",
+                      padding: "0.6rem",
+                      borderRadius: "6px",
+                      border: "1px solid #d1d5db",
+                      resize: "vertical",
+                    }}
+                  />
+                  <div
+                    style={{
+                      fontSize: "0.75rem",
+                      color: "#6b7280",
+                      marginTop: "0.35rem",
+                    }}
+                  >
+                    Wrap text in <strong>**double asterisks**</strong> to bold
+                    it in the saved description.
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "0.5rem",
+                      marginTop: "0.5rem",
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={onSaveWatchlistDescription}
+                      style={{
+                        padding: "0.5rem 0.8rem",
+                        borderRadius: "6px",
+                        border: "none",
+                        background: "#000000",
+                        color: "#ffffff",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Save
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onCancelEditWatchlistDescription}
+                      style={{
+                        padding: "0.5rem 0.8rem",
+                        borderRadius: "6px",
+                        border: "none",
+                        background: "#6b7280",
+                        color: "#ffffff",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
           </div>
@@ -327,11 +454,20 @@ const WatchlistSection = ({
                 backgroundColor: "#fafafa",
               }}
             >
-              <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.75rem", flexWrap: "wrap" }}>
+              <div
+                style={{
+                  display: "flex",
+                  gap: "0.5rem",
+                  marginBottom: "0.75rem",
+                  flexWrap: "wrap",
+                }}
+              >
                 <input
                   type="text"
                   value={newTicker}
-                  onChange={(e) => onNewTickerChange(e.target.value.toUpperCase())}
+                  onChange={(e) =>
+                    onNewTickerChange(e.target.value.toUpperCase())
+                  }
                   placeholder="Add Ticker"
                   style={{
                     padding: "0.65rem",
@@ -366,11 +502,21 @@ const WatchlistSection = ({
                 </button>
               </div>
 
-              <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
+              <div
+                style={{
+                  display: "flex",
+                  gap: "0.5rem",
+                  marginBottom: "0.75rem",
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                }}
+              >
                 <input
                   type="text"
                   value={newManualTicker}
-                  onChange={(e) => onNewManualTickerChange(e.target.value.toUpperCase())}
+                  onChange={(e) =>
+                    onNewManualTickerChange(e.target.value.toUpperCase())
+                  }
                   placeholder="Manual Global Ticker (e.g. KRX:005930)"
                   style={{
                     padding: "0.65rem",
@@ -387,20 +533,10 @@ const WatchlistSection = ({
                 />
                 <input
                   type="text"
-                  value={newManualCurrentPrice}
-                  onChange={(e) => onNewManualCurrentPriceChange(e.target.value)}
-                  placeholder="Current Price"
-                  style={{
-                    padding: "0.65rem",
-                    borderRadius: "4px",
-                    border: "1px solid #ccc",
-                    width: "140px",
-                  }}
-                />
-                <input
-                  type="text"
                   value={newManualMarketCap}
-                  onChange={(e) => onNewManualMarketCapChange(e.target.value.toUpperCase())}
+                  onChange={(e) =>
+                    onNewManualMarketCapChange(e.target.value.toUpperCase())
+                  }
                   placeholder="Market Cap (e.g. 350B)"
                   style={{
                     padding: "0.65rem",
@@ -473,7 +609,9 @@ const WatchlistSection = ({
                   >
                     Manual global stocks (excluded from refresh)
                   </div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+                  <div
+                    style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}
+                  >
                     {manualRows.map((row) => (
                       <div
                         key={`${watchlistName}-manual-${row.Ticker}`}
@@ -517,9 +655,11 @@ const WatchlistSection = ({
               .map((row) => ({
                 ...row,
                 Description:
-                  stockDescriptionsByWatchlist[watchlistName]?.[row.Ticker] || "",
+                  stockDescriptionsByWatchlist[watchlistName]?.[row.Ticker] ||
+                  "",
                 Subcategory:
-                  stockSubcategoriesByWatchlist[watchlistName]?.[row.Ticker] || "",
+                  stockSubcategoriesByWatchlist[watchlistName]?.[row.Ticker] ||
+                  "",
               }))}
             sortColumn={sortColumn}
             setSortColumn={onSetSortColumn}
@@ -530,14 +670,20 @@ const WatchlistSection = ({
             showCustomDatesChange={useCustomRange}
             expandedByTicker={expandedStockByWatchlist[watchlistName] || {}}
             editingByTicker={editingStockByWatchlist[watchlistName] || {}}
-            draftDescriptionByTicker={stockDescriptionDraftByWatchlist[watchlistName] || {}}
+            draftDescriptionByTicker={
+              stockDescriptionDraftByWatchlist[watchlistName] || {}
+            }
             onToggleTickerExpand={onToggleTickerExpand}
             onStartEditDescription={onStartEditDescription}
             onCancelEditDescription={onCancelEditDescription}
             onDraftDescriptionChange={onDraftDescriptionChange}
             onSaveDescription={onSaveDescription}
-            editingSubcategoryByTicker={editingStockSubcategoryByWatchlist[watchlistName] || {}}
-            draftSubcategoryByTicker={stockSubcategoryDraftByWatchlist[watchlistName] || {}}
+            editingSubcategoryByTicker={
+              editingStockSubcategoryByWatchlist[watchlistName] || {}
+            }
+            draftSubcategoryByTicker={
+              stockSubcategoryDraftByWatchlist[watchlistName] || {}
+            }
             onStartEditSubcategory={onStartEditSubcategory}
             onCancelEditSubcategory={onCancelEditSubcategory}
             onDraftSubcategoryChange={onDraftSubcategoryChange}
@@ -554,21 +700,35 @@ const WatchlistSection = ({
             expandedStockByWatchlist={expandedStockByWatchlist}
             editingStockByWatchlist={editingStockByWatchlist}
             stockDescriptionDraftByWatchlist={stockDescriptionDraftByWatchlist}
-            editingStockSubcategoryByWatchlist={editingStockSubcategoryByWatchlist}
+            editingStockSubcategoryByWatchlist={
+              editingStockSubcategoryByWatchlist
+            }
             stockSubcategoryDraftByWatchlist={stockSubcategoryDraftByWatchlist}
             onToggleExpand={(_wl, ticker) => onToggleTickerExpand(ticker)}
-            onStartEditDescription={(_wl, ticker) => onStartEditDescription(ticker)}
-            onCancelEditDescription={(_wl, ticker) => onCancelEditDescription(ticker)}
+            onStartEditDescription={(_wl, ticker) =>
+              onStartEditDescription(ticker)
+            }
+            onCancelEditDescription={(_wl, ticker) =>
+              onCancelEditDescription(ticker)
+            }
             onDraftDescriptionChange={(_wl, ticker, value) =>
               onDraftDescriptionChange(ticker, value)
             }
-            onSaveDescription={(_wl, ticker, value) => onSaveDescription(ticker, value)}
-            onStartEditSubcategory={(_wl, ticker) => onStartEditSubcategory(ticker)}
-            onCancelEditSubcategory={(_wl, ticker) => onCancelEditSubcategory(ticker)}
+            onSaveDescription={(_wl, ticker, value) =>
+              onSaveDescription(ticker, value)
+            }
+            onStartEditSubcategory={(_wl, ticker) =>
+              onStartEditSubcategory(ticker)
+            }
+            onCancelEditSubcategory={(_wl, ticker) =>
+              onCancelEditSubcategory(ticker)
+            }
             onDraftSubcategoryChange={(_wl, ticker, value) =>
               onDraftSubcategoryChange(ticker, value)
             }
-            onSaveSubcategory={(_wl, ticker, value) => onSaveSubcategory(ticker, value)}
+            onSaveSubcategory={(_wl, ticker, value) =>
+              onSaveSubcategory(ticker, value)
+            }
           />
         </>
       )}
@@ -577,4 +737,3 @@ const WatchlistSection = ({
 };
 
 export default WatchlistSection;
-

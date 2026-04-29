@@ -108,7 +108,7 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
     Record<string, string>
   >({});
   const [newManualByWatchlist, setNewManualByWatchlist] = useState<
-    Record<string, { ticker: string; currentPrice: string; marketCap: string }>
+    Record<string, { ticker: string; marketCap: string }>
   >({});
   const [watchlistData, setWatchlistData] = useState<
     Record<string, StockData[]>
@@ -230,17 +230,11 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
     if (!requireAdmin()) return;
     const draft = newManualByWatchlist[watchlistName] || {
       ticker: "",
-      currentPrice: "",
       marketCap: "",
     };
     const ticker = normalizeTickerInputLocal(draft.ticker || "");
     if (!ticker) {
       showPopup("Please enter a ticker for the manual stock.");
-      return;
-    }
-    const currentPrice = parseNumberInput(draft.currentPrice);
-    if (currentPrice === null) {
-      showPopup("Please enter a valid Current Price (e.g. 123.45).");
       return;
     }
     const marketCap = parseNumberInput(draft.marketCap);
@@ -261,7 +255,7 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
     const manualRow: StockData = {
       Ticker: ticker,
       "Starting Price": null,
-      "Current Price": currentPrice,
+      "Current Price": null,
       "Market Cap": marketCap,
       "Daily Stock Change %": null,
       "Custom Dates Change %": null,
@@ -283,7 +277,7 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
     }));
     setNewManualByWatchlist((prev) => ({
       ...prev,
-      [watchlistName]: { ticker: "", currentPrice: "", marketCap: "" },
+      [watchlistName]: { ticker: "", marketCap: "" },
     }));
 
     try {
@@ -2036,9 +2030,6 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
                   newManualTicker={
                     newManualByWatchlist[watchlistName]?.ticker || ""
                   }
-                  newManualCurrentPrice={
-                    newManualByWatchlist[watchlistName]?.currentPrice || ""
-                  }
                   newManualMarketCap={
                     newManualByWatchlist[watchlistName]?.marketCap || ""
                   }
@@ -2086,22 +2077,33 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
                     }))
                   }
                   onSaveWatchlistName={() => void handleSaveWatchlistName(watchlistName)}
-                  onToggleEditMode={() =>
+                  onToggleEditMode={() => {
+                    const nextIsEditing = !isEditing;
                     setEditModeByWatchlist((prev) => ({
                       ...prev,
-                      [watchlistName]: !isEditing,
-                    }))
-                  }
+                      [watchlistName]: nextIsEditing,
+                    }));
+
+                    // When entering edit mode, open description editing automatically.
+                    // When leaving edit mode, close it (and keep draft in sync with saved).
+                    setWatchlistDescriptionDraftByName((prev) => ({
+                      ...prev,
+                      [watchlistName]:
+                        nextIsEditing
+                          ? watchlistDescriptionByName[watchlistName] || ""
+                          : prev[watchlistName] || "",
+                    }));
+                    setEditingWatchlistDescriptionByName((prev) => ({
+                      ...prev,
+                      [watchlistName]: nextIsEditing,
+                    }));
+                  }}
                   onDeleteWatchlist={() => handleDeleteWatchlist(watchlistName)}
-                  onStartEditWatchlistDescription={() => {
+                  onCancelEditWatchlistDescription={() => {
                     setWatchlistDescriptionDraftByName((prev) => ({
                       ...prev,
                       [watchlistName]:
                         watchlistDescriptionByName[watchlistName] || "",
-                    }));
-                    setEditingWatchlistDescriptionByName((prev) => ({
-                      ...prev,
-                      [watchlistName]: true,
                     }));
                   }}
                   onWatchlistDescriptionDraftChange={(value) =>
@@ -2125,17 +2127,6 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
                       ...prev,
                       [watchlistName]: {
                         ticker: value,
-                        currentPrice: prev[watchlistName]?.currentPrice || "",
-                        marketCap: prev[watchlistName]?.marketCap || "",
-                      },
-                    }))
-                  }
-                  onNewManualCurrentPriceChange={(value) =>
-                    setNewManualByWatchlist((prev) => ({
-                      ...prev,
-                      [watchlistName]: {
-                        ticker: prev[watchlistName]?.ticker || "",
-                        currentPrice: value,
                         marketCap: prev[watchlistName]?.marketCap || "",
                       },
                     }))
@@ -2145,7 +2136,6 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
                       ...prev,
                       [watchlistName]: {
                         ticker: prev[watchlistName]?.ticker || "",
-                        currentPrice: prev[watchlistName]?.currentPrice || "",
                         marketCap: value,
                       },
                     }))

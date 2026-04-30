@@ -1,6 +1,7 @@
 import { Fragment } from "react";
 import type { StockData } from "../../utils/polygonApi";
 import { parseStockDescriptionRichText } from "../../utils/stockDescriptionRichText";
+import { toggleMarkdownBold } from "../../utils/markdownBoldToggle";
 
 type Props = {
   data: StockData[];
@@ -231,6 +232,25 @@ const CustomWatchlistsTable = ({
                           <textarea
                             value={draftDescription}
                             onChange={(e) => onDraftDescriptionChange?.(ticker, e.target.value)}
+                            onKeyDown={(e) => {
+                              if (!(e.ctrlKey || e.metaKey)) return;
+                              if (e.key.toLowerCase() !== "b") return;
+                              e.preventDefault();
+
+                              const target = e.currentTarget;
+                              const update = toggleMarkdownBold(
+                                draftDescription,
+                                target.selectionStart ?? 0,
+                                target.selectionEnd ?? 0,
+                              );
+                              onDraftDescriptionChange?.(ticker, update.value);
+                              requestAnimationFrame(() => {
+                                target.setSelectionRange(
+                                  update.selectionStart,
+                                  update.selectionEnd,
+                                );
+                              });
+                            }}
                             onInput={(e) => {
                               const target = e.currentTarget;
                               target.style.height = "auto";

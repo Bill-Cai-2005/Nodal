@@ -449,11 +449,11 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
       ).trim() || UNCATEGORIZED;
     const nextStockDescriptions =
       overrides?.stockDescriptions ??
-      stockDescriptionsByWatchlist[watchlistName] ??
+      stockDescriptionsByWatchlistRef.current[watchlistName] ??
       {};
     const nextStockSubcategories =
       overrides?.stockSubcategories ??
-      stockSubcategoriesByWatchlist[watchlistName] ??
+      stockSubcategoriesByWatchlistRef.current[watchlistName] ??
       {};
     await saveCustomWatchlistToDb(
       watchlistName,

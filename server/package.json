@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc",
+    "build": "tsc --pretty false",
+    "postbuild": "node -e \"console.log('build:tsc finished')\"",
     "start": "node dist/index.js"
   },
   "dependencies": {

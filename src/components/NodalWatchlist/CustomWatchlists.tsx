@@ -16,6 +16,10 @@ import {
   loadWatchlists,
   saveWatchlists,
   type WatchlistCache,
+  loadStockDescriptionsByWatchlist,
+  saveStockDescriptionsByWatchlist,
+  loadStockSubcategoriesByWatchlist,
+  saveStockSubcategoriesByWatchlist,
 } from "../../utils/watchlistCache";
 import {
   normalizeTickerInputLocal,
@@ -383,6 +387,13 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
           );
           setStockDescriptionsByWatchlist(stockDescriptions);
           setStockSubcategoriesByWatchlist(stockSubcategories);
+          // Keep refs in sync immediately so early saves/refreshes
+          // don't accidentally wipe DB fields before effects run.
+          stockDescriptionsByWatchlistRef.current = stockDescriptions;
+          stockSubcategoriesByWatchlistRef.current = stockSubcategories;
+          // Also mirror to local cache for resilience/offline.
+          saveStockDescriptionsByWatchlist(stockDescriptions);
+          saveStockSubcategoriesByWatchlist(stockSubcategories);
           setWatchlistData(watchlistDataMap);
           saveWatchlists(watchlistsMap);
           return;
@@ -395,6 +406,8 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
       }
 
       const loaded = loadWatchlists();
+      const loadedStockDescriptions = loadStockDescriptionsByWatchlist();
+      const loadedStockSubcategories = loadStockSubcategoriesByWatchlist();
       setWatchlists(loaded);
       setWatchlistOrder(Object.keys(loaded));
       setWatchlistNameDraftByName(
@@ -405,6 +418,10 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
       );
       setWatchlistCategoryByName({});
       setExpandedByCategory({});
+      setStockDescriptionsByWatchlist(loadedStockDescriptions);
+      setStockSubcategoriesByWatchlist(loadedStockSubcategories);
+      stockDescriptionsByWatchlistRef.current = loadedStockDescriptions;
+      stockSubcategoriesByWatchlistRef.current = loadedStockSubcategories;
     })();
   }, []);
 
@@ -1198,6 +1215,7 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
       ...stockDescriptionsByWatchlistRef.current,
       [watchlistName]: nextStockDescriptions,
     };
+    saveStockDescriptionsByWatchlist(stockDescriptionsByWatchlistRef.current);
     setStockDescriptionsByWatchlist((prev) => ({
       ...prev,
       [watchlistName]: nextStockDescriptions,
@@ -1285,6 +1303,7 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
       ...stockSubcategoriesByWatchlistRef.current,
       [watchlistName]: nextStockSubcategories,
     };
+    saveStockSubcategoriesByWatchlist(stockSubcategoriesByWatchlistRef.current);
     setStockSubcategoriesByWatchlist((prev) => ({
       ...prev,
       [watchlistName]: nextStockSubcategories,

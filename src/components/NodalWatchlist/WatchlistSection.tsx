@@ -123,10 +123,6 @@ const WatchlistSection = ({
   stockDescriptionDraftByWatchlist,
   editingStockSubcategoryByWatchlist,
   stockSubcategoryDraftByWatchlist,
-  onDragStart,
-  onDragOver,
-  onDrop,
-  onDragEnd,
   onToggleExpanded,
   onStartEditWatchlistName,
   onWatchlistNameDraftChange,
@@ -155,7 +151,6 @@ const WatchlistSection = ({
   onDraftSubcategoryChange,
   onSaveSubcategory,
 }: Props) => {
-  const isDraggable = isAdmin && !isExpanded;
   const [isWatchlistDescriptionExpanded, setIsWatchlistDescriptionExpanded] =
     useState(false);
 
@@ -171,23 +166,7 @@ const WatchlistSection = ({
 
   return (
     <div
-      draggable={isDraggable}
-      onDragStart={(e) => {
-        if (!isDraggable) return;
-        onDragStart(e);
-      }}
-      onDragOver={(e) => {
-        if (!isDraggable) return;
-        onDragOver(e);
-      }}
-      onDrop={(e) => {
-        if (!isDraggable) return;
-        onDrop(e);
-      }}
-      onDragEnd={() => {
-        if (!isDraggable) return;
-        onDragEnd();
-      }}
+      draggable={false}
       style={{
         marginBottom: "1rem",
         border: isDragOver ? "2px dashed #111827" : "1px solid #e2e8f0",
@@ -195,7 +174,7 @@ const WatchlistSection = ({
         padding: "1rem",
         backgroundColor: "#ffffff",
         opacity: isDragged ? 0.65 : 1,
-        cursor: isDraggable ? "grab" : "default",
+        cursor: "default",
       }}
     >
       <div

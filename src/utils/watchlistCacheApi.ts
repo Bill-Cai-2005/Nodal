@@ -2,6 +2,7 @@ import { getApiEndpoint } from "./api";
 
 export const RESOURCE_TAB_AI_BUILDOUT = "ai-buildout";
 export const RESOURCE_TAB_WATCHLIST = "watchlist";
+export const AI_BUILDOUT_WATCHLIST_NAME = "AI Buildout";
 
 export const RESOURCE_TAB_AREAS_OF_INTEREST_LABEL = "Areas of Interest";
 export const AREAS_OF_INTEREST_DESCRIPTION =

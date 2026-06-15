@@ -21,12 +21,18 @@ import {
   deleteCustomWatchlistFromDb,
   loadCustomWatchlistsFromDb,
   saveCustomWatchlistToDb,
+  AI_BUILDOUT_WATCHLIST_NAME,
   RESOURCE_TAB_WATCHLIST,
   AREAS_OF_INTEREST_DESCRIPTION,
   type CustomWatchlistDbEntry,
 } from "../../utils/watchlistCacheApi";
 import { runWithConcurrency } from "../../utils/concurrency";
 import WatchlistSection from "./WatchlistSection";
+import RefreshWatchlistsButton from "./RefreshWatchlistsButton";
+import {
+  primaryActionButtonStyle,
+  refreshWatchlistsToolbarStyle,
+} from "./watchlistButtonStyles";
 
 const UNCATEGORIZED = "Uncategorized";
 
@@ -344,7 +350,9 @@ const CustomWatchlists = ({
       try {
         const resp = await loadCustomWatchlistsFromDb(resourceTab);
         applyLoadedState({
-          effectiveWatchlists: resp.watchlists || [],
+          effectiveWatchlists: (resp.watchlists || []).filter(
+            (w) => w.name !== AI_BUILDOUT_WATCHLIST_NAME,
+          ),
         });
       } catch (e) {
         console.warn(
@@ -420,6 +428,12 @@ const CustomWatchlists = ({
     const name = newWatchlistName.trim();
     if (!name) {
       showPopup("Please enter a watchlist name");
+      return;
+    }
+    if (name.toLowerCase() === AI_BUILDOUT_WATCHLIST_NAME.toLowerCase()) {
+      showPopup(
+        `"${AI_BUILDOUT_WATCHLIST_NAME}" is managed on the AI Buildout tab.`,
+      );
       return;
     }
     if (watchlists[name]) {
@@ -579,11 +593,14 @@ const CustomWatchlists = ({
   };
 
   const getRenderableWatchlistNames = () => {
-    const orderedWatchlistNames = watchlistOrder.filter((name) =>
-      Boolean(watchlists[name]),
+    const orderedWatchlistNames = watchlistOrder.filter(
+      (name) =>
+        Boolean(watchlists[name]) && name !== AI_BUILDOUT_WATCHLIST_NAME,
     );
     const unorderedWatchlistNames = Object.keys(watchlists).filter(
-      (name) => !orderedWatchlistNames.includes(name),
+      (name) =>
+        !orderedWatchlistNames.includes(name) &&
+        name !== AI_BUILDOUT_WATCHLIST_NAME,
     );
     return [...orderedWatchlistNames, ...unorderedWatchlistNames];
   };
@@ -1518,34 +1535,12 @@ const CustomWatchlists = ({
       </p>
 
       <div style={{ marginBottom: "1rem" }}>
-        <div
-          style={{
-            display: "flex",
-            gap: "1rem",
-            justifyContent: "center",
-            flexWrap: "wrap",
-            marginBottom: "1rem",
-          }}
-        >
-          <button
-            type="button"
+        <div style={refreshWatchlistsToolbarStyle}>
+          <RefreshWatchlistsButton
             onClick={handleRefreshAllWatchlists}
             disabled={loadingAll || Boolean(validatingWatchlist)}
-            style={{
-              padding: "0.75rem 1.5rem",
-              backgroundColor: "#000000",
-              color: "#ffffff",
-              border: "none",
-              borderRadius: "6px",
-              cursor:
-                loadingAll || validatingWatchlist ? "not-allowed" : "pointer",
-              fontSize: "0.875rem",
-              fontWeight: 600,
-              opacity: loadingAll || validatingWatchlist ? 0.6 : 1,
-            }}
-          >
-            {loadingAll ? "Refreshing..." : "Refresh All Watchlists"}
-          </button>
+            loading={loadingAll}
+          />
         </div>
 
         {isAdmin && hasMarketData && (
@@ -1613,17 +1608,11 @@ const CustomWatchlists = ({
                     !isAdmin || loadingAll || Boolean(validatingWatchlist)
                   }
                   style={{
-                    padding: "0.65rem 1rem",
-                    backgroundColor: "#000000",
-                    color: "#ffffff",
-                    border: "none",
-                    borderRadius: "6px",
+                    ...primaryActionButtonStyle,
                     cursor:
                       loadingAll || validatingWatchlist
                         ? "not-allowed"
                         : "pointer",
-                    fontSize: "0.85rem",
-                    fontWeight: 600,
                     opacity: loadingAll || validatingWatchlist ? 0.6 : 1,
                   }}
                 >

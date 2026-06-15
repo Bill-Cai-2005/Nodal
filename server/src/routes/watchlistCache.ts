@@ -9,6 +9,11 @@ const router = express.Router();
 const UNCATEGORIZED = "Uncategorized";
 const AI_BUILDOUT_NAME = "AI Buildout";
 const DEFAULT_RESOURCE_TAB = "ai-buildout";
+const AREAS_OF_INTEREST_TAB = "watchlist";
+
+function isAiBuildoutWatchlistName(name: string) {
+  return String(name || "").trim().toLowerCase() === AI_BUILDOUT_NAME.toLowerCase();
+}
 
 function normalizeResourceTab(value: unknown): string {
   const tab = String(value || "").trim();
@@ -101,6 +106,76 @@ function mergeKeyTags(target: string[], source: string[]) {
     seen.add(key);
     target.push(label);
   }
+}
+
+async function ensureWatchlistTabIsolation() {
+  const misplaced = await CustomWatchlist.findOne({
+    name: AI_BUILDOUT_NAME,
+    resourceTab: AREAS_OF_INTEREST_TAB,
+  });
+  if (!misplaced) return;
+
+  const canonical = await CustomWatchlist.findOne({
+    name: AI_BUILDOUT_NAME,
+    resourceTab: DEFAULT_RESOURCE_TAB,
+  });
+
+  if (!canonical) {
+    await CustomWatchlist.findOneAndUpdate(
+      { name: AI_BUILDOUT_NAME, resourceTab: AREAS_OF_INTEREST_TAB },
+      { resourceTab: DEFAULT_RESOURCE_TAB },
+    );
+    return;
+  }
+
+  const mergedTickers = Array.from(
+    new Set([
+      ...(canonical.tickers || []),
+      ...(misplaced.tickers || []),
+    ].map((t) => String(t).trim().toUpperCase()).filter(Boolean)),
+  );
+  const mergedDescriptions = {
+    ...(misplaced.stockDescriptions || {}),
+    ...(canonical.stockDescriptions || {}),
+  };
+  const mergedTags = normalizeStockTags(canonical.stockTags || {});
+  mergeTagsInto(mergedTags, normalizeStockTags(misplaced.stockTags || {}));
+  const mergedTagDescriptions = normalizeTagDescriptions(
+    canonical.tagDescriptions || {},
+  );
+  mergeTagDescriptions(
+    mergedTagDescriptions,
+    normalizeTagDescriptions(misplaced.tagDescriptions || {}),
+  );
+  const mergedKeyTags = normalizeKeyTags(canonical.keyTags || []);
+  mergeKeyTags(mergedKeyTags, normalizeKeyTags(misplaced.keyTags || []));
+  const mergedDataByTicker: Record<string, any> = {};
+  for (const row of [...(misplaced.data || []), ...(canonical.data || [])]) {
+    const ticker = String(row?.Ticker || "").trim().toUpperCase();
+    if (ticker) mergedDataByTicker[ticker] = row;
+  }
+
+  await CustomWatchlist.findOneAndUpdate(
+    { name: AI_BUILDOUT_NAME, resourceTab: DEFAULT_RESOURCE_TAB },
+    {
+      tickers: mergedTickers,
+      stockDescriptions: mergedDescriptions,
+      stockTags: mergedTags,
+      tagDescriptions: mergedTagDescriptions,
+      keyTags: mergedKeyTags,
+      data: Object.values(mergedDataByTicker),
+      lastRefreshed:
+        canonical.lastRefreshed && misplaced.lastRefreshed
+          ? canonical.lastRefreshed > misplaced.lastRefreshed
+            ? canonical.lastRefreshed
+            : misplaced.lastRefreshed
+          : canonical.lastRefreshed || misplaced.lastRefreshed || null,
+    },
+  );
+  await CustomWatchlist.deleteOne({
+    name: AI_BUILDOUT_NAME,
+    resourceTab: AREAS_OF_INTEREST_TAB,
+  });
 }
 
 async function ensureAiBuildoutConsolidated() {
@@ -264,11 +339,16 @@ router.get("/custom-watchlists", async (req: Request, res: Response) => {
   try {
     await connectDB();
     await migrateLegacyResourceTabs();
-    if (normalizeResourceTab(req.query.resourceTab) === DEFAULT_RESOURCE_TAB) {
+    await ensureWatchlistTabIsolation();
+    const resourceTab = normalizeResourceTab(req.query.resourceTab);
+    if (resourceTab === DEFAULT_RESOURCE_TAB) {
       await ensureAiBuildoutConsolidated();
     }
-    const resourceTab = normalizeResourceTab(req.query.resourceTab);
-    const docs = await CustomWatchlist.find({ resourceTab }).sort({ order: 1, name: 1 });
+    const watchlistFilter =
+      resourceTab === AREAS_OF_INTEREST_TAB
+        ? { resourceTab, name: { $ne: AI_BUILDOUT_NAME } }
+        : { resourceTab };
+    const docs = await CustomWatchlist.find(watchlistFilter).sort({ order: 1, name: 1 });
     return res.json({
       watchlists: docs.map((d: any) => ({
         name: d.name,
@@ -302,6 +382,15 @@ router.put("/custom-watchlists/:name", async (req: Request, res: Response) => {
 
     if (!name) {
       return res.status(400).json({ error: "Watchlist name is required" });
+    }
+    const resourceTab = normalizeResourceTab(resource_tab);
+    if (
+      isAiBuildoutWatchlistName(name) &&
+      resourceTab === AREAS_OF_INTEREST_TAB
+    ) {
+      return res.status(400).json({
+        error: `"${AI_BUILDOUT_NAME}" belongs on the AI Buildout tab, not Areas of Interest.`,
+      });
     }
     if (!Array.isArray(tickers)) {
       return res.status(400).json({ error: "tickers must be an array" });
@@ -348,7 +437,6 @@ router.put("/custom-watchlists/:name", async (req: Request, res: Response) => {
       typeof category === "string" && category.trim()
         ? category.trim()
         : "Uncategorized";
-    const resourceTab = normalizeResourceTab(resource_tab);
     const parsedLastRefreshed =
       last_refreshed === null || last_refreshed === undefined
         ? null

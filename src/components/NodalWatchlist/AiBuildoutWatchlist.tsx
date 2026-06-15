@@ -12,6 +12,7 @@ import {
   loadCustomWatchlistsFromDb,
   saveCustomWatchlistToDb,
   AI_BUILDOUT_DESCRIPTION,
+  AI_BUILDOUT_WATCHLIST_NAME,
   RESOURCE_TAB_AI_BUILDOUT,
 } from "../../utils/watchlistCacheApi";
 import { runWithConcurrency } from "../../utils/concurrency";
@@ -24,8 +25,11 @@ import {
 } from "../../utils/tagUtils";
 import TagFilterBar from "./TagFilterBar";
 import AiBuildoutTable from "./AiBuildoutTable";
-
-const WATCHLIST_NAME = "AI Buildout";
+import RefreshWatchlistsButton from "./RefreshWatchlistsButton";
+import {
+  primaryActionButtonStyle,
+  refreshWatchlistsToolbarStyle,
+} from "./watchlistButtonStyles";
 
 const primaryButtonStyle = {
   padding: "0.75rem 1rem",
@@ -124,7 +128,7 @@ const AiBuildoutWatchlist = ({ isAdmin = false }: Props) => {
     },
   ) => {
     await saveCustomWatchlistToDb(
-      WATCHLIST_NAME,
+      AI_BUILDOUT_WATCHLIST_NAME,
       nextTickers,
       nextData,
       lastRefreshed,
@@ -148,7 +152,7 @@ const AiBuildoutWatchlist = ({ isAdmin = false }: Props) => {
       try {
         const resp = await loadCustomWatchlistsFromDb(RESOURCE_TAB_AI_BUILDOUT);
         const wl =
-          resp.watchlists?.find((w) => w.name === WATCHLIST_NAME) ||
+          resp.watchlists?.find((w) => w.name === AI_BUILDOUT_WATCHLIST_NAME) ||
           resp.watchlists?.[0];
         if (!wl) return;
 
@@ -508,39 +512,28 @@ const AiBuildoutWatchlist = ({ isAdmin = false }: Props) => {
       </p>
 
       <div style={{ marginBottom: "1rem" }}>
-        <div
-          style={{
-            display: "flex",
-            gap: "1rem",
-            justifyContent: "center",
-            flexWrap: "wrap",
-            marginBottom: "1rem",
-          }}
-        >
-          <button
-            type="button"
+        <div style={refreshWatchlistsToolbarStyle}>
+          <RefreshWatchlistsButton
             onClick={handleRefresh}
             disabled={isBusy}
-            style={{
-              ...primaryButtonStyle,
-              opacity: isBusy ? 0.6 : 1,
-              cursor: isBusy ? "not-allowed" : "pointer",
-            }}
-          >
-            {loadingAll ? "Refreshing..." : "Refresh All Watchlists"}
-          </button>
+            loading={loadingAll}
+          />
           {isAdmin && (
             <button
               type="button"
               onClick={() => setIsEditMode((prev) => !prev)}
               style={{
                 padding: "0.75rem 1.5rem",
+                minHeight: "44px",
                 backgroundColor: isEditMode ? "#111827" : "#ffffff",
                 color: isEditMode ? "#ffffff" : "#111827",
                 border: "1px solid #111827",
                 borderRadius: "6px",
                 cursor: "pointer",
                 fontWeight: 600,
+                fontSize: "0.875rem",
+                fontFamily: "Montserrat, sans-serif",
+                boxSizing: "border-box",
               }}
             >
               {isEditMode ? "Done Editing" : "Edit Watchlist"}
@@ -596,7 +589,7 @@ const AiBuildoutWatchlist = ({ isAdmin = false }: Props) => {
                   onClick={handleLoadHistoricalData}
                   disabled={isBusy}
                   style={{
-                    ...primaryButtonStyle,
+                    ...primaryActionButtonStyle,
                     opacity: isBusy ? 0.6 : 1,
                     cursor: isBusy ? "not-allowed" : "pointer",
                   }}

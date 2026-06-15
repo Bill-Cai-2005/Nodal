@@ -1,4 +1,4 @@
-import { refreshWatchlistsButtonStyle } from "./watchlistButtonStyles";
+import { primaryActionButtonStyle } from "./watchlistButtonStyles";
 
 type Props = {
   onClick: () => void;
@@ -12,7 +12,7 @@ const RefreshWatchlistsButton = ({ onClick, disabled = false, loading = false }:
     onClick={onClick}
     disabled={disabled}
     style={{
-      ...refreshWatchlistsButtonStyle,
+      ...primaryActionButtonStyle,
       cursor: disabled ? "not-allowed" : "pointer",
       opacity: disabled ? 0.6 : 1,
     }}

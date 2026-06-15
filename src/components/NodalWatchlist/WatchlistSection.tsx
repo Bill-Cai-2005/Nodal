@@ -36,12 +36,9 @@ type Props = {
   formatValue: (value: number | null) => string;
 
   stockDescriptionsByWatchlist: Record<string, Record<string, string>>;
-  stockSubcategoriesByWatchlist: Record<string, Record<string, string>>;
   expandedStockByWatchlist: Record<string, Record<string, boolean>>;
   editingStockByWatchlist: Record<string, Record<string, boolean>>;
   stockDescriptionDraftByWatchlist: Record<string, Record<string, string>>;
-  editingStockSubcategoryByWatchlist: Record<string, Record<string, boolean>>;
-  stockSubcategoryDraftByWatchlist: Record<string, Record<string, string>>;
 
   onDragStart: (event: DragEvent<HTMLDivElement>) => void;
   onDragOver: (event: DragEvent<HTMLDivElement>) => void;
@@ -77,11 +74,6 @@ type Props = {
   onCancelEditDescription: (ticker: string) => void;
   onDraftDescriptionChange: (ticker: string, value: string) => void;
   onSaveDescription: (ticker: string, value: string) => void;
-  onStartEditSubcategory: (ticker: string) => void;
-  onCancelEditSubcategory: (ticker: string) => void;
-  onDraftSubcategoryChange: (ticker: string, value: string) => void;
-  onSaveSubcategory: (ticker: string, value: string) => void;
-  showSubcategories?: boolean;
 };
 
 const iconButtonBaseStyle = {
@@ -118,12 +110,9 @@ const WatchlistSection = ({
   useCustomRange,
   formatValue,
   stockDescriptionsByWatchlist,
-  stockSubcategoriesByWatchlist,
   expandedStockByWatchlist,
   editingStockByWatchlist,
   stockDescriptionDraftByWatchlist,
-  editingStockSubcategoryByWatchlist,
-  stockSubcategoryDraftByWatchlist,
   onToggleExpanded,
   onStartEditWatchlistName,
   onWatchlistNameDraftChange,
@@ -147,11 +136,6 @@ const WatchlistSection = ({
   onCancelEditDescription,
   onDraftDescriptionChange,
   onSaveDescription,
-  onStartEditSubcategory,
-  onCancelEditSubcategory,
-  onDraftSubcategoryChange,
-  onSaveSubcategory,
-  showSubcategories = true,
 }: Props) => {
   const [isWatchlistDescriptionExpanded, setIsWatchlistDescriptionExpanded] =
     useState(false);
@@ -360,8 +344,8 @@ const WatchlistSection = ({
                         }
                       >
                         {isWatchlistDescriptionExpanded
-                          ? "Hide Subcategory Description"
-                          : "Show Subcategory Description"}
+                          ? "Hide Description"
+                          : "Show Description"}
                       </button>
                     )}
                   </div>
@@ -676,9 +660,6 @@ const WatchlistSection = ({
                 Description:
                   stockDescriptionsByWatchlist[watchlistName]?.[row.Ticker] ||
                   "",
-                Subcategory:
-                  stockSubcategoriesByWatchlist[watchlistName]?.[row.Ticker] ||
-                  "",
               }))}
             sortColumn={sortColumn}
             setSortColumn={onSetSortColumn}
@@ -697,17 +678,6 @@ const WatchlistSection = ({
             onCancelEditDescription={onCancelEditDescription}
             onDraftDescriptionChange={onDraftDescriptionChange}
             onSaveDescription={onSaveDescription}
-            editingSubcategoryByTicker={
-              editingStockSubcategoryByWatchlist[watchlistName] || {}
-            }
-            draftSubcategoryByTicker={
-              stockSubcategoryDraftByWatchlist[watchlistName] || {}
-            }
-            onStartEditSubcategory={onStartEditSubcategory}
-            onCancelEditSubcategory={onCancelEditSubcategory}
-            onDraftSubcategoryChange={onDraftSubcategoryChange}
-            onSaveSubcategory={onSaveSubcategory}
-            showSubcategories={showSubcategories}
           />
 
           <ManualCustomStocksTable
@@ -716,14 +686,9 @@ const WatchlistSection = ({
             isAdmin={isAdmin}
             formatValue={formatValue}
             stockDescriptionsByWatchlist={stockDescriptionsByWatchlist}
-            stockSubcategoriesByWatchlist={stockSubcategoriesByWatchlist}
             expandedStockByWatchlist={expandedStockByWatchlist}
             editingStockByWatchlist={editingStockByWatchlist}
             stockDescriptionDraftByWatchlist={stockDescriptionDraftByWatchlist}
-            editingStockSubcategoryByWatchlist={
-              editingStockSubcategoryByWatchlist
-            }
-            stockSubcategoryDraftByWatchlist={stockSubcategoryDraftByWatchlist}
             onToggleExpand={(_wl, ticker) => onToggleTickerExpand(ticker)}
             onStartEditDescription={(_wl, ticker) =>
               onStartEditDescription(ticker)
@@ -737,19 +702,6 @@ const WatchlistSection = ({
             onSaveDescription={(_wl, ticker, value) =>
               onSaveDescription(ticker, value)
             }
-            onStartEditSubcategory={(_wl, ticker) =>
-              onStartEditSubcategory(ticker)
-            }
-            onCancelEditSubcategory={(_wl, ticker) =>
-              onCancelEditSubcategory(ticker)
-            }
-            onDraftSubcategoryChange={(_wl, ticker, value) =>
-              onDraftSubcategoryChange(ticker, value)
-            }
-            onSaveSubcategory={(_wl, ticker, value) =>
-              onSaveSubcategory(ticker, value)
-            }
-            showSubcategories={showSubcategories}
           />
         </>
       )}

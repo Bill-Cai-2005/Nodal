@@ -1,14 +1,3 @@
-export const removeKeys = <T extends Record<string, any>>(
-  source: T,
-  keys: string[],
-): T => {
-  if (keys.length === 0) return source;
-  const keySet = new Set(keys);
-  return Object.fromEntries(
-    Object.entries(source).filter(([key]) => !keySet.has(key)),
-  ) as T;
-};
-
 export const renameKey = <T extends Record<string, any>>(
   source: T,
   fromKey: string,
@@ -37,6 +26,15 @@ export const percentChangeColor = (
 ): string => {
   if (typeof value !== "number" || Number.isNaN(value)) return "#374151";
   return value >= 0 ? "#008000" : "#dc2626";
+};
+
+export const formatMarketValue = (value: number | null): string => {
+  if (value === null) return "N/A";
+  if (Math.abs(value) >= 1e9) return `$${(value / 1e9).toFixed(2)}B`;
+  if (Math.abs(value) >= 1e6) return `$${(value / 1e6).toFixed(2)}M`;
+  if (Math.abs(value) >= 1e3) return `$${(value / 1e3).toFixed(2)}K`;
+  if (typeof value === "number") return value.toFixed(2);
+  return String(value);
 };
 
 export const parseNumberInput = (raw: string): number | null => {

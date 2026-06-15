@@ -2,8 +2,6 @@ import {
   useEffect,
   useRef,
   useState,
-  type Dispatch,
-  type SetStateAction,
   type CSSProperties,
   type DragEvent,
 } from "react";
@@ -79,22 +77,14 @@ const CustomWatchlists = ({
   >({});
   const [stockDescriptionsByWatchlist, setStockDescriptionsByWatchlist] =
     useState<Record<string, Record<string, string>>>({});
-  const [stockSubcategoriesByWatchlist, setStockSubcategoriesByWatchlist] =
-    useState<Record<string, Record<string, string>>>({});
 
   // Avoid stale-closure overwrites during async refresh/save flows.
   const stockDescriptionsByWatchlistRef = useRef<
     Record<string, Record<string, string>>
   >({});
-  const stockSubcategoriesByWatchlistRef = useRef<
-    Record<string, Record<string, string>>
-  >({});
   useEffect(() => {
     stockDescriptionsByWatchlistRef.current = stockDescriptionsByWatchlist;
   }, [stockDescriptionsByWatchlist]);
-  useEffect(() => {
-    stockSubcategoriesByWatchlistRef.current = stockSubcategoriesByWatchlist;
-  }, [stockSubcategoriesByWatchlist]);
   const [newWatchlistName, setNewWatchlistName] = useState("");
   const [showCreateWatchlistControls, setShowCreateWatchlistControls] =
     useState(false);
@@ -160,52 +150,12 @@ const CustomWatchlists = ({
     stockDescriptionDraftByWatchlist,
     setStockDescriptionDraftByWatchlist,
   ] = useState<Record<string, Record<string, string>>>({});
-  const [
-    editingStockSubcategoryByWatchlist,
-    setEditingStockSubcategoryByWatchlist,
-  ] = useState<Record<string, Record<string, boolean>>>({});
-  const [
-    stockSubcategoryDraftByWatchlist,
-    setStockSubcategoryDraftByWatchlist,
-  ] = useState<Record<string, Record<string, string>>>({});
 
   const showPopup = (message: string) => setPopupMessage(message);
   const requireAdmin = (message = "Admin password required.") => {
     if (isAdmin) return true;
     showPopup(message);
     return false;
-  };
-
-  // (Removed) international split: we now split by "manual" vs "watchlist" rows.
-
-  const setBoolByWatchlistTicker = (
-    setter: Dispatch<SetStateAction<Record<string, Record<string, boolean>>>>,
-    watchlistName: string,
-    ticker: string,
-    value: boolean,
-  ) => {
-    setter((prev) => ({
-      ...prev,
-      [watchlistName]: {
-        ...(prev[watchlistName] || {}),
-        [ticker]: value,
-      },
-    }));
-  };
-
-  const setStringByWatchlistTicker = (
-    setter: Dispatch<SetStateAction<Record<string, Record<string, string>>>>,
-    watchlistName: string,
-    ticker: string,
-    value: string,
-  ) => {
-    setter((prev) => ({
-      ...prev,
-      [watchlistName]: {
-        ...(prev[watchlistName] || {}),
-        [ticker]: value,
-      },
-    }));
   };
 
   const handleAddManualStock = async (watchlistName: string) => {
@@ -320,7 +270,6 @@ const CustomWatchlists = ({
         const watchlistDataMap: Record<string, StockData[]> = {};
         const watchlistDescriptions: Record<string, string> = {};
         const stockDescriptions: Record<string, Record<string, string>> = {};
-        const stockSubcategories: Record<string, Record<string, string>> = {};
         const orderedNames = [...effectiveWatchlists]
           .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
           .map((w) => w.name);
@@ -329,7 +278,6 @@ const CustomWatchlists = ({
           watchlistDataMap[w.name] = (w.data || []) as StockData[];
           watchlistDescriptions[w.name] = w.description || "";
           stockDescriptions[w.name] = w.stock_descriptions || {};
-          stockSubcategories[w.name] = (w as any).stock_subcategories || {};
         }
         setWatchlists(watchlistsMap);
         setWatchlistOrder(orderedNames);
@@ -341,9 +289,7 @@ const CustomWatchlists = ({
         );
         setWatchlistDescriptionDraftByName(watchlistDescriptions);
         setStockDescriptionsByWatchlist(stockDescriptions);
-        setStockSubcategoriesByWatchlist(stockSubcategories);
         stockDescriptionsByWatchlistRef.current = stockDescriptions;
-        stockSubcategoriesByWatchlistRef.current = stockSubcategories;
         setWatchlistData(watchlistDataMap);
       };
 
@@ -390,7 +336,6 @@ const CustomWatchlists = ({
       order?: number;
       category?: string;
       stockDescriptions?: Record<string, string>;
-      stockSubcategories?: Record<string, string>;
     },
   ) => {
     const nextDescription =
@@ -403,10 +348,6 @@ const CustomWatchlists = ({
       overrides?.stockDescriptions ??
       stockDescriptionsByWatchlistRef.current[watchlistName] ??
       {};
-    const nextStockSubcategories =
-      overrides?.stockSubcategories ??
-      stockSubcategoriesByWatchlistRef.current[watchlistName] ??
-      {};
     await saveCustomWatchlistToDb(
       watchlistName,
       nextTickers,
@@ -418,7 +359,6 @@ const CustomWatchlists = ({
         category: nextCategory,
         resourceTab,
         stockDescriptions: nextStockDescriptions,
-        stockSubcategories: nextStockSubcategories,
       },
     );
   };
@@ -449,7 +389,6 @@ const CustomWatchlists = ({
     setEditingWatchlistNameByName((prev) => ({ ...prev, [name]: false }));
     setWatchlistDescriptionDraftByName((prev) => ({ ...prev, [name]: "" }));
     setStockDescriptionsByWatchlist((prev) => ({ ...prev, [name]: {} }));
-    setStockSubcategoriesByWatchlist((prev) => ({ ...prev, [name]: {} }));
     setExpandedByWatchlist((prev) => ({ ...prev, [name]: true }));
     setEditModeByWatchlist((prev) => ({ ...prev, [name]: true }));
     setSortAscendingByWatchlist((prev) => ({ ...prev, [name]: true }));
@@ -461,7 +400,6 @@ const CustomWatchlists = ({
         order: nextOrder.length - 1,
         category: UNCATEGORIZED,
         stockDescriptions: {},
-        stockSubcategories: {},
       });
     } catch (e: any) {
       showPopup(
@@ -731,9 +669,6 @@ const CustomWatchlists = ({
       setStockDescriptionsByWatchlist((prev) =>
         renameKey(prev, watchlistName, nextName),
       );
-      setStockSubcategoriesByWatchlist((prev) =>
-        renameKey(prev, watchlistName, nextName),
-      );
       setExpandedByWatchlist((prev) =>
         renameKey(prev, watchlistName, nextName),
       );
@@ -766,26 +701,17 @@ const CustomWatchlists = ({
       setStockDescriptionDraftByWatchlist((prev) =>
         renameKey(prev, watchlistName, nextName),
       );
-      setEditingStockSubcategoryByWatchlist((prev) =>
-        renameKey(prev, watchlistName, nextName),
-      );
-      setStockSubcategoryDraftByWatchlist((prev) =>
-        renameKey(prev, watchlistName, nextName),
-      );
       setWatchlistOrder((prev) =>
         prev.map((name) => (name === watchlistName ? nextName : name)),
       );
 
       try {
-        const stockSubcategories =
-          stockSubcategoriesByWatchlist[watchlistName] || {};
         await saveCustomWatchlistToDb(nextName, tickers, data, null, {
           description: currentDescription,
           order,
           category: UNCATEGORIZED,
           resourceTab,
           stockDescriptions,
-          stockSubcategories,
         });
         await deleteCustomWatchlistFromDb(watchlistName);
       } catch (e: any) {
@@ -840,92 +766,6 @@ const CustomWatchlists = ({
     } catch (e: any) {
       showPopup(
         `Saved locally but failed to sync stock description: ${e.message}`,
-      );
-    }
-  };
-
-  const handleStartEditStockSubcategory = (
-    watchlistName: string,
-    ticker: string,
-  ) => {
-    if (!requireAdmin()) return;
-    const live = stockSubcategoriesByWatchlist[watchlistName]?.[ticker] || "";
-    setStringByWatchlistTicker(
-      setStockSubcategoryDraftByWatchlist,
-      watchlistName,
-      ticker,
-      live,
-    );
-    setBoolByWatchlistTicker(
-      setEditingStockSubcategoryByWatchlist,
-      watchlistName,
-      ticker,
-      true,
-    );
-  };
-
-  const handleCancelEditStockSubcategory = (
-    watchlistName: string,
-    ticker: string,
-  ) => {
-    setBoolByWatchlistTicker(
-      setEditingStockSubcategoryByWatchlist,
-      watchlistName,
-      ticker,
-      false,
-    );
-  };
-
-  const handleDraftStockSubcategoryChange = (
-    watchlistName: string,
-    ticker: string,
-    value: string,
-  ) => {
-    setStringByWatchlistTicker(
-      setStockSubcategoryDraftByWatchlist,
-      watchlistName,
-      ticker,
-      value,
-    );
-  };
-
-  const handleSaveStockSubcategory = async (
-    watchlistName: string,
-    ticker: string,
-    subcategory: string,
-  ) => {
-    if (!requireAdmin()) return;
-    const nextStockSubcategories = {
-      ...(stockSubcategoriesByWatchlist[watchlistName] || {}),
-      [ticker]: subcategory,
-    };
-    stockSubcategoriesByWatchlistRef.current = {
-      ...stockSubcategoriesByWatchlistRef.current,
-      [watchlistName]: nextStockSubcategories,
-    };
-    setStockSubcategoriesByWatchlist((prev) => ({
-      ...prev,
-      [watchlistName]: nextStockSubcategories,
-    }));
-    try {
-      await saveWatchlist(
-        watchlistName,
-        watchlists[watchlistName] || [],
-        watchlistData[watchlistName] || [],
-        null,
-        {
-          stockSubcategories: nextStockSubcategories,
-        },
-      );
-      setBoolByWatchlistTicker(
-        setEditingStockSubcategoryByWatchlist,
-        watchlistName,
-        ticker,
-        false,
-      );
-    } catch (e: any) {
-      showPopup(
-        `Saved locally but failed to sync stock subcategory: ${e.message}`,
       );
     }
   };
@@ -1045,11 +885,6 @@ const CustomWatchlists = ({
       delete next[watchlistName];
       return next;
     });
-    setStockSubcategoriesByWatchlist((prev) => {
-      const next = { ...prev };
-      delete next[watchlistName];
-      return next;
-    });
     setExpandedStockByWatchlist((prev) => {
       const next = { ...prev };
       delete next[watchlistName];
@@ -1061,16 +896,6 @@ const CustomWatchlists = ({
       return next;
     });
     setStockDescriptionDraftByWatchlist((prev) => {
-      const next = { ...prev };
-      delete next[watchlistName];
-      return next;
-    });
-    setEditingStockSubcategoryByWatchlist((prev) => {
-      const next = { ...prev };
-      delete next[watchlistName];
-      return next;
-    });
-    setStockSubcategoryDraftByWatchlist((prev) => {
       const next = { ...prev };
       delete next[watchlistName];
       return next;
@@ -1185,8 +1010,6 @@ const CustomWatchlists = ({
                 resourceTab,
                 stockDescriptions:
                   stockDescriptionsByWatchlistRef.current[watchlistName] || {},
-                stockSubcategories:
-                  stockSubcategoriesByWatchlistRef.current[watchlistName] || {},
               },
             );
           } catch (e: any) {
@@ -1262,13 +1085,9 @@ const CustomWatchlists = ({
       > = {};
 
       await runWithConcurrency(tasks, 24, async ({ watchlistName, ticker }) => {
-        const row = await fetchStockData(
-          ticker,
-          customStart,
-          customEnd,
-          undefined,
-          { includeReference: false },
-        );
+        const row = await fetchStockData(ticker, customStart, customEnd, {
+          includeReference: false,
+        });
         if (!customByWatchlistAndTicker[watchlistName])
           customByWatchlistAndTicker[watchlistName] = {};
         customByWatchlistAndTicker[watchlistName][ticker] =
@@ -1368,12 +1187,9 @@ const CustomWatchlists = ({
         useCustomRange={useCustomRange}
         formatValue={formatValue}
         stockDescriptionsByWatchlist={stockDescriptionsByWatchlist}
-        stockSubcategoriesByWatchlist={stockSubcategoriesByWatchlist}
         expandedStockByWatchlist={expandedStockByWatchlist}
         editingStockByWatchlist={editingStockByWatchlist}
         stockDescriptionDraftByWatchlist={stockDescriptionDraftByWatchlist}
-        editingStockSubcategoryByWatchlist={editingStockSubcategoryByWatchlist}
-        stockSubcategoryDraftByWatchlist={stockSubcategoryDraftByWatchlist}
         onDragStart={(event) =>
           handleWatchlistDragStart(event, sectionWatchlistName)
         }
@@ -1502,19 +1318,6 @@ const CustomWatchlists = ({
         onSaveDescription={(ticker, value) =>
           void handleSaveStockDescription(sectionWatchlistName, ticker, value)
         }
-        onStartEditSubcategory={(ticker) =>
-          handleStartEditStockSubcategory(sectionWatchlistName, ticker)
-        }
-        onCancelEditSubcategory={(ticker) =>
-          handleCancelEditStockSubcategory(sectionWatchlistName, ticker)
-        }
-        onDraftSubcategoryChange={(ticker, value) =>
-          handleDraftStockSubcategoryChange(sectionWatchlistName, ticker, value)
-        }
-        onSaveSubcategory={(ticker, value) =>
-          void handleSaveStockSubcategory(sectionWatchlistName, ticker, value)
-        }
-        showSubcategories={false}
       />
     );
   };

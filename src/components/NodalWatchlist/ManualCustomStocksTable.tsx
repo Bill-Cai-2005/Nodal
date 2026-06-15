@@ -25,20 +25,6 @@ const simpleTableStyles = {
     background: "#f9fafb",
     borderBottom: "1px solid #e2e8f0",
   },
-  editableText: {
-    color: "#374151",
-    whiteSpace: "nowrap" as const,
-    cursor: "text" as const,
-    display: "inline-block",
-    minWidth: "120px",
-  },
-  input: {
-    width: "100%",
-    minWidth: "140px",
-    padding: "0.35rem 0.5rem",
-    borderRadius: "4px",
-    border: "1px solid #d1d5db",
-  },
   secondaryButton: {
     padding: "0.5rem 0.8rem",
     borderRadius: "6px",
@@ -54,12 +40,9 @@ export type ManualCustomStocksTableProps = {
   isAdmin: boolean;
   formatValue: (value: number | null) => string;
   stockDescriptionsByWatchlist: Record<string, Record<string, string>>;
-  stockSubcategoriesByWatchlist: Record<string, Record<string, string>>;
   expandedStockByWatchlist: Record<string, Record<string, boolean>>;
   editingStockByWatchlist: Record<string, Record<string, boolean>>;
   stockDescriptionDraftByWatchlist: Record<string, Record<string, string>>;
-  editingStockSubcategoryByWatchlist: Record<string, Record<string, boolean>>;
-  stockSubcategoryDraftByWatchlist: Record<string, Record<string, string>>;
   onToggleExpand: (watchlistName: string, ticker: string) => void;
   onStartEditDescription: (watchlistName: string, ticker: string) => void;
   onCancelEditDescription: (watchlistName: string, ticker: string) => void;
@@ -73,19 +56,6 @@ export type ManualCustomStocksTableProps = {
     ticker: string,
     value: string,
   ) => void;
-  onStartEditSubcategory: (watchlistName: string, ticker: string) => void;
-  onCancelEditSubcategory: (watchlistName: string, ticker: string) => void;
-  onDraftSubcategoryChange: (
-    watchlistName: string,
-    ticker: string,
-    value: string,
-  ) => void;
-  onSaveSubcategory: (
-    watchlistName: string,
-    ticker: string,
-    value: string,
-  ) => void;
-  showSubcategories?: boolean;
 };
 
 const ManualCustomStocksTable = ({
@@ -94,22 +64,14 @@ const ManualCustomStocksTable = ({
   isAdmin,
   formatValue,
   stockDescriptionsByWatchlist,
-  stockSubcategoriesByWatchlist,
   expandedStockByWatchlist,
   editingStockByWatchlist,
   stockDescriptionDraftByWatchlist,
-  editingStockSubcategoryByWatchlist,
-  stockSubcategoryDraftByWatchlist,
   onToggleExpand,
   onStartEditDescription,
   onCancelEditDescription,
   onDraftDescriptionChange,
   onSaveDescription,
-  onStartEditSubcategory,
-  onCancelEditSubcategory,
-  onDraftSubcategoryChange,
-  onSaveSubcategory,
-  showSubcategories = true,
 }: ManualCustomStocksTableProps) => {
   if (manualRows.length === 0) return null;
 
@@ -130,9 +92,6 @@ const ManualCustomStocksTable = ({
           <thead>
             <tr style={simpleTableStyles.headerRow}>
               <th style={simpleTableStyles.th}>Ticker</th>
-              {showSubcategories && (
-                <th style={simpleTableStyles.th}>Subcategory</th>
-              )}
               <th style={simpleTableStyles.th}>Market Cap</th>
             </tr>
           </thead>
@@ -141,7 +100,6 @@ const ManualCustomStocksTable = ({
               const ticker = row.Ticker;
               const isExpanded =
                 expandedStockByWatchlist[watchlistName]?.[ticker] ?? false;
-
               const isEditingDescription =
                 editingStockByWatchlist[watchlistName]?.[ticker] ?? false;
               const liveDescription =
@@ -149,15 +107,6 @@ const ManualCustomStocksTable = ({
               const draftDescription =
                 stockDescriptionDraftByWatchlist[watchlistName]?.[ticker] ??
                 liveDescription;
-
-              const liveSubcategory =
-                stockSubcategoriesByWatchlist[watchlistName]?.[ticker] || "";
-              const isEditingSubcategory =
-                editingStockSubcategoryByWatchlist[watchlistName]?.[ticker] ??
-                false;
-              const draftSubcategory =
-                stockSubcategoryDraftByWatchlist[watchlistName]?.[ticker] ??
-                liveSubcategory;
 
               return (
                 <>
@@ -167,64 +116,6 @@ const ManualCustomStocksTable = ({
                     style={{ ...simpleTableStyles.tr, cursor: "pointer" }}
                   >
                     <td style={simpleTableStyles.td}>{ticker}</td>
-                    {showSubcategories && (
-                      <td style={simpleTableStyles.td}>
-                        {!isAdmin ? (
-                          <span
-                            style={{ color: "#374151", whiteSpace: "nowrap" }}
-                          >
-                            {(liveSubcategory || "").trim() || "—"}
-                          </span>
-                        ) : !isEditingSubcategory ? (
-                          <span
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onStartEditSubcategory(watchlistName, ticker);
-                            }}
-                            style={simpleTableStyles.editableText}
-                            title="Click to edit"
-                          >
-                            {(liveSubcategory || "").trim() || "—"}
-                          </span>
-                        ) : (
-                          <input
-                            type="text"
-                            value={draftSubcategory}
-                            onClick={(e) => e.stopPropagation()}
-                            onChange={(e) =>
-                              onDraftSubcategoryChange(
-                                watchlistName,
-                                ticker,
-                                e.target.value,
-                              )
-                            }
-                            onKeyDown={(e) => {
-                              if (e.key === "Escape") {
-                                e.preventDefault();
-                                onCancelEditSubcategory(watchlistName, ticker);
-                              }
-                              if (e.key === "Enter") {
-                                e.preventDefault();
-                                onSaveSubcategory(
-                                  watchlistName,
-                                  ticker,
-                                  draftSubcategory,
-                                );
-                              }
-                            }}
-                            onBlur={() =>
-                              onSaveSubcategory(
-                                watchlistName,
-                                ticker,
-                                draftSubcategory,
-                              )
-                            }
-                            autoFocus
-                            style={simpleTableStyles.input}
-                          />
-                        )}
-                      </td>
-                    )}
                     <td style={simpleTableStyles.td}>
                       {formatValue(row["Market Cap"])}
                     </td>
@@ -234,11 +125,7 @@ const ManualCustomStocksTable = ({
                     <tr
                       key={`${watchlistName}-manual-row-expanded-${ticker}-${idx}`}
                     >
-                      <td
-                        colSpan={showSubcategories ? 3 : 2}
-                        style={simpleTableStyles.expandedCell}
-                        onClick={(e) => e.stopPropagation()}
-                      >
+                      <td colSpan={2} style={simpleTableStyles.expandedCell}>
                         {!isEditingDescription ? (
                           <div
                             style={{
@@ -296,7 +183,6 @@ const ManualCustomStocksTable = ({
                                 if (!(e.ctrlKey || e.metaKey)) return;
                                 if (e.key.toLowerCase() !== "b") return;
                                 e.preventDefault();
-
                                 const target = e.currentTarget;
                                 const update = toggleMarkdownBold(
                                   draftDescription,
@@ -315,11 +201,6 @@ const ManualCustomStocksTable = ({
                                   );
                                 });
                               }}
-                              onInput={(e) => {
-                                const target = e.currentTarget;
-                                target.style.height = "auto";
-                                target.style.height = `${target.scrollHeight}px`;
-                              }}
                               rows={3}
                               style={{
                                 width: "100%",
@@ -330,12 +211,6 @@ const ManualCustomStocksTable = ({
                                 resize: "vertical",
                               }}
                             />
-                            <div
-                              style={{ fontSize: "0.75rem", color: "#6b7280" }}
-                            >
-                              Wrap text in <strong>**double asterisks**</strong>{" "}
-                              to bold it in the saved description.
-                            </div>
                             <div style={{ display: "flex", gap: "0.5rem" }}>
                               <button
                                 type="button"

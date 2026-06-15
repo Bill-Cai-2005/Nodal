@@ -1,10 +1,11 @@
-import { Fragment } from "react";
+import { Fragment, useRef } from "react";
 import type { StockData } from "../../utils/polygonApi";
 import { parseStockDescriptionRichText } from "../../utils/stockDescriptionRichText";
 import { toggleMarkdownBold } from "../../utils/markdownBoldToggle";
 import {
   getTagPillStyle,
   isKeyTag,
+  parseTagsInput,
   sortTagsWithKeysFirst,
 } from "../../utils/tagUtils";
 import {
@@ -46,12 +47,6 @@ type Props = {
   isEditMode?: boolean;
 };
 
-const parseTagsInput = (raw: string): string[] =>
-  raw
-    .split(",")
-    .map((tag) => tag.trim())
-    .filter(Boolean);
-
 const AiBuildoutTable = ({
   data,
   keyTags = [],
@@ -79,6 +74,18 @@ const AiBuildoutTable = ({
   onRemoveTicker,
   isEditMode = false,
 }: Props) => {
+  const committingTagsForTickerRef = useRef<string | null>(null);
+
+  const commitTags = (ticker: string, raw: string) => {
+    committingTagsForTickerRef.current = ticker;
+    onSaveTags?.(ticker, parseTagsInput(raw));
+    window.setTimeout(() => {
+      if (committingTagsForTickerRef.current === ticker) {
+        committingTagsForTickerRef.current = null;
+      }
+    }, 0);
+  };
+
   if (data.length === 0) {
     return (
       <div
@@ -177,33 +184,62 @@ const AiBuildoutTable = ({
     }
 
     return (
-      <input
-        type="text"
-        value={draftTags}
-        onChange={(e) => onDraftTagsChange?.(ticker, e.target.value)}
+      <div
+        style={{ display: "flex", gap: "0.35rem", alignItems: "center" }}
         onClick={(e) => e.stopPropagation()}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") {
-            e.preventDefault();
-            onCancelEditTags?.(ticker);
-          }
-          if (e.key === "Enter") {
-            e.preventDefault();
-            onSaveTags?.(ticker, parseTagsInput(draftTags));
-          }
-        }}
-        onBlur={() => onSaveTags?.(ticker, parseTagsInput(draftTags))}
-        placeholder="lithography, semis"
-        autoFocus
-        style={{
-          width: "100%",
-          minWidth: "160px",
-          padding: "0.35rem 0.5rem",
-          borderRadius: "4px",
-          border: "1px solid #d1d5db",
-          fontSize: "0.85rem",
-        }}
-      />
+      >
+        <input
+          type="text"
+          value={draftTags}
+          onChange={(e) => onDraftTagsChange?.(ticker, e.target.value)}
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              e.preventDefault();
+              onCancelEditTags?.(ticker);
+            }
+            if (e.key === "Enter") {
+              e.preventDefault();
+              commitTags(ticker, e.currentTarget.value);
+            }
+          }}
+          onBlur={(e) => {
+            if (committingTagsForTickerRef.current === ticker) return;
+            commitTags(ticker, e.currentTarget.value);
+          }}
+          placeholder="lithography, semis"
+          autoFocus
+          style={{
+            flex: 1,
+            minWidth: "140px",
+            padding: "0.35rem 0.5rem",
+            borderRadius: "4px",
+            border: "1px solid #d1d5db",
+            fontSize: "0.85rem",
+          }}
+        />
+        <button
+          type="button"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={(e) => {
+            e.stopPropagation();
+            commitTags(ticker, draftTags);
+          }}
+          style={{
+            padding: "0.35rem 0.6rem",
+            borderRadius: "4px",
+            border: "none",
+            backgroundColor: "#000000",
+            color: "#ffffff",
+            fontSize: "0.8rem",
+            fontWeight: 600,
+            cursor: "pointer",
+            whiteSpace: "nowrap",
+          }}
+        >
+          Save
+        </button>
+      </div>
     );
   };
 
@@ -307,7 +343,10 @@ const AiBuildoutTable = ({
                       </span>
                     ) : null}
                   </td>
-                  <td style={{ padding: "0.75rem", minWidth: "180px" }}>
+                  <td
+                    style={{ padding: "0.75rem", minWidth: "180px" }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     {renderTags(ticker, liveTags)}
                   </td>
                   <td style={{ padding: "0.75rem" }}>

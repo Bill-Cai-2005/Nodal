@@ -17,7 +17,16 @@ export const primaryActionButtonStyle: CSSProperties = {
   justifyContent: "center",
 };
 
-export const refreshWatchlistsButtonStyle = primaryActionButtonStyle;
+export const compactActionButtonStyle: CSSProperties = {
+  padding: "0.75rem 1rem",
+  backgroundColor: "#000000",
+  color: "#ffffff",
+  border: "none",
+  borderRadius: "6px",
+  cursor: "pointer",
+  fontWeight: 600,
+  fontFamily: "Montserrat, sans-serif",
+};
 
 export const refreshWatchlistsToolbarStyle: CSSProperties = {
   display: "flex",

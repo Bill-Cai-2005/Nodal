@@ -4,6 +4,12 @@ export const normalizeTagKey = (tag: string): string =>
 export const normalizeTagLabel = (tag: string): string =>
   String(tag || "").trim();
 
+export const parseTagsInput = (raw: string): string[] =>
+  raw
+    .split(",")
+    .map((tag) => tag.trim())
+    .filter(Boolean);
+
 export const stockMatchesTags = (
   stockTags: string[],
   selectedTags: string[],

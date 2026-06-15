@@ -97,13 +97,10 @@ const UniversalWatchlist = () => {
         if (!needsMarket && !needsPrice && existing) {
           byTicker[ticker] = existing;
         } else if (needsPrice) {
-          const fetched = await fetchStockData(
-            ticker,
-            undefined,
-            undefined,
-            undefined,
-            { includeReference: needsMarket, signal: controller.signal }
-          );
+          const fetched = await fetchStockData(ticker, undefined, undefined, {
+            includeReference: needsMarket,
+            signal: controller.signal,
+          });
           byTicker[ticker] = {
             ...fetched,
             "Market Cap": needsMarket ? fetched["Market Cap"] : (existing?.["Market Cap"] ?? fetched["Market Cap"]),
@@ -199,7 +196,9 @@ const UniversalWatchlist = () => {
       setProgress({ current: 0, total: missing.length, message: "Loading historical data for missing tickers..." });
       let completed = 0;
       const fetched = await runWithConcurrency(missing, 24, async (ticker) => {
-        const row = await fetchStockData(ticker, customStart, customEnd, undefined, { includeReference: false });
+        const row = await fetchStockData(ticker, customStart, customEnd, {
+          includeReference: false,
+        });
         completed += 1;
         if (completed % 10 === 0 || completed === missing.length) {
           setProgress({

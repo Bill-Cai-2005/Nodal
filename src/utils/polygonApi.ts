@@ -7,7 +7,6 @@
 import { getApiEndpoint } from "./api";
 
 const SNAPSHOT_BATCH_SIZE = 250;
-const LOG_REFRESH_SPEED = true;
 
 export interface StockData {
   Ticker: string;
@@ -126,13 +125,6 @@ const safeFloat = (v: any): number | null => {
   return isNaN(num) ? null : num;
 };
 
-const nowMs = (): number => {
-  if (typeof performance !== "undefined" && typeof performance.now === "function") {
-    return performance.now();
-  }
-  return Date.now();
-};
-
 const ALLOWED_EQUITY_TYPES = new Set(["CS", "ADRC", "ADRP", "ADRW"]);
 
 const isIndividualCompanyResult = (row: any): boolean => {
@@ -248,12 +240,8 @@ export const fetchStockData = async (
   ticker: string,
   customStartDate?: Date,
   customEndDate?: Date,
-  startPriceCache?: Record<string, { prices: Record<string, number> }>,
-  options?: { includeReference?: boolean; signal?: AbortSignal }
+  options?: { includeReference?: boolean; signal?: AbortSignal },
 ): Promise<StockData> => {
-  const t0 = nowMs();
-  let refMs = 0;
-  let aggsMs = 0;
   try {
     const includeReference = options?.includeReference ?? true;
     const signal = options?.signal;
@@ -262,9 +250,7 @@ export const fetchStockData = async (
 
     // Get reference data
     if (includeReference) {
-      const refStart = nowMs();
       const ref = await fetchTickerReference(ticker, signal);
-      refMs = nowMs() - refStart;
       if (ref) {
         marketCap = ref.market_cap;
         industry = ref.industry;
@@ -282,7 +268,6 @@ export const fetchStockData = async (
     // recent day-over-day movement.
     const fromDate = new Date();
     fromDate.setDate(fromDate.getDate() - 7);
-    const dailyAggsStart = nowMs();
     const dailyAggs = await polygonGet(
       `/v2/aggs/ticker/${ticker}/range/1/day/${toIso(fromDate)}/${toIso(new Date())}`,
       { adjusted: "true", sort: "asc", limit: 5000 },
@@ -290,7 +275,6 @@ export const fetchStockData = async (
       4,
       signal
     );
-    aggsMs += nowMs() - dailyAggsStart;
     const dailyRows = dailyAggs?.results || [];
     const dailyLastClose = dailyRows.length >= 1 ? safeFloat(dailyRows[dailyRows.length - 1].c) : null;
     const dailyPrevClose = dailyRows.length >= 2
@@ -305,38 +289,22 @@ export const fetchStockData = async (
 
     // Custom range path
     if (useCustomRange && customStartDate && customEndDate) {
-      const dateKey = toIso(customStartDate);
-      let cachedPrice: number | null = null;
-
-      if (startPriceCache?.[dateKey]?.prices) {
-        cachedPrice = safeFloat(startPriceCache[dateKey].prices[ticker]);
+      const toDate = new Date(customStartDate);
+      toDate.setDate(toDate.getDate() + 14);
+      const startAggs = await polygonGet(
+        `/v2/aggs/ticker/${ticker}/range/1/day/${toIso(customStartDate)}/${toIso(toDate)}`,
+        { adjusted: "true", sort: "asc", limit: 50 },
+        20,
+        4,
+        signal,
+      );
+      const startRows = startAggs?.results || [];
+      if (startRows.length > 0) {
+        startingPrice = safeFloat(startRows[0].o);
       }
 
-      if (cachedPrice !== null) {
-        startingPrice = cachedPrice;
-      } else {
-        // Fetch first open on or after start date
-        const toDate = new Date(customStartDate);
-        toDate.setDate(toDate.getDate() + 14);
-        const aggsStart = nowMs();
-        const aggs = await polygonGet(
-          `/v2/aggs/ticker/${ticker}/range/1/day/${toIso(customStartDate)}/${toIso(toDate)}`,
-          { adjusted: "true", sort: "asc", limit: 50 },
-          20,
-          4,
-          signal
-        );
-        aggsMs += nowMs() - aggsStart;
-        const rows = aggs?.results || [];
-        if (rows.length > 0) {
-          startingPrice = safeFloat(rows[0].o);
-        }
-      }
-
-      // Fetch last close on or before end date
       const fromDate = new Date(customEndDate);
       fromDate.setDate(fromDate.getDate() - 14);
-      const aggsStart = nowMs();
       const aggs = await polygonGet(
         `/v2/aggs/ticker/${ticker}/range/1/day/${toIso(fromDate)}/${toIso(customEndDate)}`,
         { adjusted: "true", sort: "asc", limit: 50 },
@@ -344,7 +312,6 @@ export const fetchStockData = async (
         4,
         signal
       );
-      aggsMs += nowMs() - aggsStart;
       const rows = aggs?.results || [];
       if (rows.length > 0) {
         const last = rows[rows.length - 1];
@@ -361,16 +328,6 @@ export const fetchStockData = async (
       volume = dailyVolume;
     }
 
-    if (LOG_REFRESH_SPEED) {
-      const totalMs = nowMs() - t0;
-      console.log({
-        ticker,
-        refMs,
-        aggsMs,
-        totalMs,
-      });
-    }
-
     return {
       Ticker: ticker,
       "Starting Price": startingPrice,
@@ -383,15 +340,6 @@ export const fetchStockData = async (
       Error: null,
     };
   } catch (err: any) {
-    if (LOG_REFRESH_SPEED) {
-      const totalMs = nowMs() - t0;
-      console.log({
-        ticker,
-        refMs,
-        aggsMs,
-        totalMs,
-      });
-    }
     return {
       Ticker: ticker,
       "Starting Price": null,
@@ -489,26 +437,4 @@ export const fetchSnapshotBatch = async (tickers: string[]): Promise<Record<stri
     }
   }
   return results;
-};
-
-export const fetchHistoricalOpenPrice = async (
-  ticker: string,
-  startDate: Date,
-  signal?: AbortSignal
-): Promise<number | null> => {
-  const toDate = new Date(startDate);
-  toDate.setDate(toDate.getDate() + 14);
-  try {
-    const aggs = await polygonGet(
-      `/v2/aggs/ticker/${ticker}/range/1/day/${toIso(startDate)}/${toIso(toDate)}`,
-      { adjusted: "true", sort: "asc", limit: 50 },
-      20,
-      4,
-      signal
-    );
-    const rows = aggs?.results || [];
-    return rows.length > 0 ? safeFloat(rows[0].o) : null;
-  } catch {
-    return null;
-  }
 };

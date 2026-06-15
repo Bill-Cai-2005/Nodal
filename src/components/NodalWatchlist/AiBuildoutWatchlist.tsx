@@ -7,6 +7,7 @@ import {
 import {
   normalizeTickerInputLocal,
   parseNumberInput,
+  formatMarketValue,
 } from "../../utils/watchlistUtils";
 import {
   loadCustomWatchlistsFromDb,
@@ -19,6 +20,7 @@ import { runWithConcurrency } from "../../utils/concurrency";
 import {
   mergeUniqueTags,
   normalizeTagKey,
+  parseTagsInput,
   setTagDescription,
   stockMatchesTags,
   toggleKeyTag,
@@ -28,24 +30,9 @@ import AiBuildoutTable from "./AiBuildoutTable";
 import RefreshWatchlistsButton from "./RefreshWatchlistsButton";
 import {
   primaryActionButtonStyle,
+  compactActionButtonStyle,
   refreshWatchlistsToolbarStyle,
 } from "./watchlistButtonStyles";
-
-const primaryButtonStyle = {
-  padding: "0.75rem 1rem",
-  backgroundColor: "#000000",
-  color: "#ffffff",
-  border: "none",
-  borderRadius: "6px",
-  cursor: "pointer",
-  fontWeight: 600,
-};
-
-const parseTagsInput = (raw: string): string[] =>
-  raw
-    .split(",")
-    .map((tag) => tag.trim())
-    .filter(Boolean);
 
 const normalizeStockTagsByTicker = (
   tags: Record<string, string[]>,
@@ -133,20 +120,14 @@ const AiBuildoutWatchlist = ({ isAdmin = false }: Props) => {
   }, [keyTags]);
 
   const showPopup = (message: string) => setPopupMessage(message);
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
 
-  const getMetadataForSave = (
-    overrides?: {
-      stockDescriptions?: Record<string, string>;
-      stockTags?: Record<string, string[]>;
-      tagDescriptions?: Record<string, string>;
-      keyTags?: string[];
-    },
+  const flushPendingTagDrafts = (
     editingTags = editingTagsByTicker,
     tagDrafts = draftTagsByTicker,
+    baseTags = stockTagsRef.current,
   ) => {
-    let nextTags = normalizeStockTagsByTicker(
-      overrides?.stockTags ?? stockTagsRef.current,
-    );
+    const nextTags = normalizeStockTagsByTicker(baseTags);
     for (const [ticker, isEditing] of Object.entries(editingTags)) {
       if (!isEditing) continue;
       const draft = tagDrafts[ticker];
@@ -156,21 +137,10 @@ const AiBuildoutWatchlist = ({ isAdmin = false }: Props) => {
       if (uniqueTags.length === 0) delete nextTags[key];
       else nextTags[key] = uniqueTags;
     }
-    stockTagsRef.current = nextTags;
-    setStockTags(nextTags);
-    setEditingTagsByTicker({});
-
-    return {
-      stockDescriptions:
-        overrides?.stockDescriptions ?? stockDescriptionsRef.current,
-      stockTags: nextTags,
-      tagDescriptions:
-        overrides?.tagDescriptions ?? tagDescriptionsRef.current,
-      keyTags: overrides?.keyTags ?? keyTagsRef.current,
-    };
+    return nextTags;
   };
 
-  const saveToDb = async (
+  const persistWatchlist = (
     nextTickers: string[],
     nextData: StockData[],
     lastRefreshed: string | null = null,
@@ -181,20 +151,35 @@ const AiBuildoutWatchlist = ({ isAdmin = false }: Props) => {
       keyTags?: string[];
     },
   ) => {
-    const metadata = getMetadataForSave(overrides);
-    await saveCustomWatchlistToDb(
-      AI_BUILDOUT_WATCHLIST_NAME,
-      nextTickers,
-      nextData,
-      lastRefreshed,
-      {
-        description: "",
-        order: 0,
-        category: "Uncategorized",
-        resourceTab: RESOURCE_TAB_AI_BUILDOUT,
-        ...metadata,
-      },
-    );
+    const run = async () => {
+      const stockTags = normalizeStockTagsByTicker(
+        overrides?.stockTags ?? flushPendingTagDrafts(),
+      );
+      stockTagsRef.current = stockTags;
+      setStockTags(stockTags);
+
+      await saveCustomWatchlistToDb(
+        AI_BUILDOUT_WATCHLIST_NAME,
+        nextTickers,
+        nextData,
+        lastRefreshed,
+        {
+          description: "",
+          order: 0,
+          category: "Uncategorized",
+          resourceTab: RESOURCE_TAB_AI_BUILDOUT,
+          stockDescriptions:
+            overrides?.stockDescriptions ?? stockDescriptionsRef.current,
+          stockTags,
+          tagDescriptions:
+            overrides?.tagDescriptions ?? tagDescriptionsRef.current,
+          keyTags: overrides?.keyTags ?? keyTagsRef.current,
+        },
+      );
+    };
+
+    saveQueueRef.current = saveQueueRef.current.then(run, run);
+    return saveQueueRef.current;
   };
 
   useEffect(() => {
@@ -223,15 +208,6 @@ const AiBuildoutWatchlist = ({ isAdmin = false }: Props) => {
       }
     })();
   }, []);
-
-  const formatValue = (value: number | null): string => {
-    if (value === null) return "N/A";
-    if (Math.abs(value) >= 1e9) return `$${(value / 1e9).toFixed(2)}B`;
-    if (Math.abs(value) >= 1e6) return `$${(value / 1e6).toFixed(2)}M`;
-    if (Math.abs(value) >= 1e3) return `$${(value / 1e3).toFixed(2)}K`;
-    if (typeof value === "number") return value.toFixed(2);
-    return String(value);
-  };
 
   const manualRows = watchlistData.filter((row) => !tickers.includes(row.Ticker));
   const marketRows = watchlistData.filter((row) => tickers.includes(row.Ticker));
@@ -270,7 +246,7 @@ const AiBuildoutWatchlist = ({ isAdmin = false }: Props) => {
     setTagDescriptions(nextDescriptions);
     tagDescriptionsRef.current = nextDescriptions;
     try {
-      await saveToDb(tickers, watchlistData, null, {
+      await persistWatchlist(tickers, watchlistData, null, {
         tagDescriptions: nextDescriptions,
       });
     } catch (e: any) {
@@ -283,7 +259,9 @@ const AiBuildoutWatchlist = ({ isAdmin = false }: Props) => {
     setKeyTags(nextKeyTags);
     keyTagsRef.current = nextKeyTags;
     try {
-      await saveToDb(tickers, watchlistData, null, { keyTags: nextKeyTags });
+      await persistWatchlist(tickers, watchlistData, null, {
+        keyTags: nextKeyTags,
+      });
     } catch (e: any) {
       showPopup(`Saved locally but failed to sync key theme: ${e.message}`);
     }
@@ -324,7 +302,7 @@ const AiBuildoutWatchlist = ({ isAdmin = false }: Props) => {
       setStockDescriptions(nextDescriptions);
       stockDescriptionsRef.current = nextDescriptions;
       setNewTicker("");
-      await saveToDb(nextTickers, watchlistData, null, {
+      await persistWatchlist(nextTickers, watchlistData, null, {
         stockDescriptions: nextDescriptions,
       });
     } catch (err: any) {
@@ -375,7 +353,7 @@ const AiBuildoutWatchlist = ({ isAdmin = false }: Props) => {
     setNewManualTicker("");
     setNewManualMarketCap("");
     try {
-      await saveToDb(tickers, nextData, null, {
+      await persistWatchlist(tickers, nextData, null, {
         stockDescriptions: nextDescriptions,
       });
     } catch (e: any) {
@@ -386,8 +364,8 @@ const AiBuildoutWatchlist = ({ isAdmin = false }: Props) => {
   const handleRemoveTicker = async (ticker: string) => {
     const nextTickers = tickers.filter((t) => t !== ticker);
     const nextData = watchlistData.filter((row) => row.Ticker !== ticker);
-    const nextDescriptions = { ...stockDescriptions };
-    const nextTags = { ...stockTags };
+    const nextDescriptions = { ...stockDescriptionsRef.current };
+    const nextTags = { ...stockTagsRef.current };
     delete nextDescriptions[ticker];
     delete nextTags[ticker];
     setTickers(nextTickers);
@@ -397,7 +375,7 @@ const AiBuildoutWatchlist = ({ isAdmin = false }: Props) => {
     stockDescriptionsRef.current = nextDescriptions;
     stockTagsRef.current = nextTags;
     try {
-      await saveToDb(nextTickers, nextData, null, {
+      await persistWatchlist(nextTickers, nextData, null, {
         stockDescriptions: nextDescriptions,
         stockTags: nextTags,
       });
@@ -444,7 +422,7 @@ const AiBuildoutWatchlist = ({ isAdmin = false }: Props) => {
         .filter(Boolean) as StockData[];
       const nextData = [...results, ...manualRows];
       setWatchlistData(nextData);
-      await saveToDb(tickers, nextData, new Date().toISOString());
+      await persistWatchlist(tickers, nextData, new Date().toISOString());
       setProgress({ current: 0, total: 0, message: "Refresh complete." });
     } catch (err: any) {
       showPopup(`Error: ${err.message}`);
@@ -477,13 +455,9 @@ const AiBuildoutWatchlist = ({ isAdmin = false }: Props) => {
       let completed = 0;
       const customByTicker: Record<string, number | null> = {};
       await runWithConcurrency(tasks, 24, async (ticker) => {
-        const row = await fetchStockData(
-          ticker,
-          customStart,
-          customEnd,
-          undefined,
-          { includeReference: false },
-        );
+        const row = await fetchStockData(ticker, customStart, customEnd, {
+          includeReference: false,
+        });
         customByTicker[ticker] = row["Custom Dates Change %"];
         completed += 1;
         if (completed % 10 === 0 || completed === tasks.length) {
@@ -515,7 +489,7 @@ const AiBuildoutWatchlist = ({ isAdmin = false }: Props) => {
     setStockDescriptions(nextDescriptions);
     setEditingByTicker((prev) => ({ ...prev, [ticker]: false }));
     try {
-      await saveToDb(tickers, watchlistData, null, {
+      await persistWatchlist(tickers, watchlistData, null, {
         stockDescriptions: nextDescriptions,
       });
     } catch (e: any) {
@@ -526,15 +500,28 @@ const AiBuildoutWatchlist = ({ isAdmin = false }: Props) => {
   const handleSaveTags = async (ticker: string, tags: string[]) => {
     const normalizedTicker = ticker.trim().toUpperCase();
     const uniqueTags = mergeUniqueTags([], tags);
-    const nextTags = { ...stockTags, [normalizedTicker]: uniqueTags };
+    const nextTags = { ...stockTagsRef.current };
     if (uniqueTags.length === 0) delete nextTags[normalizedTicker];
+    else nextTags[normalizedTicker] = uniqueTags;
+
     stockTagsRef.current = nextTags;
     setStockTags(nextTags);
-    setEditingTagsByTicker((prev) => ({ ...prev, [normalizedTicker]: false }));
+    setDraftTagsByTicker((prev) => {
+      const next = { ...prev };
+      delete next[normalizedTicker];
+      return next;
+    });
+    setEditingTagsByTicker((prev) => ({
+      ...prev,
+      [normalizedTicker]: false,
+    }));
+
     try {
-      await saveToDb(tickers, watchlistData, null, { stockTags: nextTags });
+      await persistWatchlist(tickers, watchlistData, null, {
+        stockTags: nextTags,
+      });
     } catch (e: any) {
-      showPopup(`Saved locally but failed to sync tags: ${e.message}`);
+      showPopup(`Failed to save tags: ${e.message}`);
     }
   };
 
@@ -698,7 +685,7 @@ const AiBuildoutWatchlist = ({ isAdmin = false }: Props) => {
             type="button"
             onClick={() => void handleAddTicker()}
             disabled={isBusy}
-            style={primaryButtonStyle}
+            style={compactActionButtonStyle}
           >
             Add Ticker
           </button>
@@ -729,7 +716,7 @@ const AiBuildoutWatchlist = ({ isAdmin = false }: Props) => {
           <button
             type="button"
             onClick={() => void handleAddManualStock()}
-            style={primaryButtonStyle}
+            style={compactActionButtonStyle}
           >
             Add International Stock
           </button>
@@ -789,7 +776,7 @@ const AiBuildoutWatchlist = ({ isAdmin = false }: Props) => {
       <AiBuildoutTable
         data={tableRows}
         keyTags={keyTags}
-        formatValue={formatValue}
+        formatValue={formatMarketValue}
         isAdmin={isAdmin}
         showCustomDatesChange={useCustomRange}
         sortColumn={sortColumn}

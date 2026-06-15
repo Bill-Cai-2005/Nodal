@@ -24,13 +24,6 @@ type Props = {
   onCancelEditDescription?: (ticker: string) => void;
   onDraftDescriptionChange?: (ticker: string, value: string) => void;
   onSaveDescription?: (ticker: string, value: string) => void;
-  editingSubcategoryByTicker?: Record<string, boolean>;
-  draftSubcategoryByTicker?: Record<string, string>;
-  onStartEditSubcategory?: (ticker: string) => void;
-  onCancelEditSubcategory?: (ticker: string) => void;
-  onDraftSubcategoryChange?: (ticker: string, value: string) => void;
-  onSaveSubcategory?: (ticker: string, value: string) => void;
-  showSubcategories?: boolean;
 };
 
 const CustomWatchlistsTable = ({
@@ -50,13 +43,6 @@ const CustomWatchlistsTable = ({
   onCancelEditDescription,
   onDraftDescriptionChange,
   onSaveDescription,
-  editingSubcategoryByTicker = {},
-  draftSubcategoryByTicker = {},
-  onStartEditSubcategory,
-  onCancelEditSubcategory,
-  onDraftSubcategoryChange,
-  onSaveSubcategory,
-  showSubcategories = true,
 }: Props) => {
   if (data.length === 0) return null;
   const formatVolume = (value: number | null): string => {
@@ -78,7 +64,6 @@ const CustomWatchlistsTable = ({
 
   const columns = [
     "Ticker",
-    ...(showSubcategories ? ["Subcategory"] : []),
     "Starting Price",
     "Current Price",
     "Market Cap",
@@ -132,10 +117,6 @@ const CustomWatchlistsTable = ({
             const isEditing = editingByTicker[ticker] ?? false;
             const liveDescription = (row as any).Description || "";
             const draftDescription = draftDescriptionByTicker[ticker] ?? liveDescription;
-            const liveSubcategory = (row as any).Subcategory || "";
-            const isEditingSubcategory = editingSubcategoryByTicker[ticker] ?? false;
-            const draftSubcategory =
-              draftSubcategoryByTicker[ticker] ?? liveSubcategory;
             return (
               <Fragment key={`${ticker}-${idx}`}>
                 <tr
@@ -143,60 +124,6 @@ const CustomWatchlistsTable = ({
                   onClick={() => onToggleTickerExpand?.(ticker)}
                 >
                   <td style={{ padding: "0.75rem" }}>{row.Ticker}</td>
-                  {showSubcategories && (
-                    <td style={{ padding: "0.75rem" }}>
-                      {!isAdmin ? (
-                        <div style={{ color: "#374151", whiteSpace: "nowrap" }}>
-                          {(liveSubcategory || "").trim() || "—"}
-                        </div>
-                      ) : !isEditingSubcategory ? (
-                        <div
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onStartEditSubcategory?.(ticker);
-                          }}
-                          style={{
-                            color: "#374151",
-                            whiteSpace: "nowrap",
-                            cursor: "text",
-                            minHeight: "20px",
-                          }}
-                          title="Click to edit"
-                        >
-                          {(liveSubcategory || "").trim() || "—"}
-                        </div>
-                      ) : (
-                        <input
-                          type="text"
-                          value={draftSubcategory}
-                          onChange={(e) =>
-                            onDraftSubcategoryChange?.(ticker, e.target.value)
-                          }
-                          onClick={(e) => e.stopPropagation()}
-                          onKeyDown={(e) => {
-                            if (e.key === "Escape") {
-                              e.preventDefault();
-                              onCancelEditSubcategory?.(ticker);
-                            }
-                            if (e.key === "Enter") {
-                              e.preventDefault();
-                              onSaveSubcategory?.(ticker, draftSubcategory);
-                            }
-                          }}
-                          onBlur={() =>
-                            onSaveSubcategory?.(ticker, draftSubcategory)
-                          }
-                          autoFocus
-                          style={{
-                            width: "100%",
-                            padding: "0.35rem 0.5rem",
-                            borderRadius: "4px",
-                            border: "1px solid #d1d5db",
-                          }}
-                        />
-                      )}
-                    </td>
-                  )}
                   <td style={{ padding: "0.75rem" }}>{formatValue(row["Starting Price"])}</td>
                   <td style={{ padding: "0.75rem" }}>{formatValue(row["Current Price"])}</td>
                   <td style={{ padding: "0.75rem" }}>{formatValue(row["Market Cap"])}</td>

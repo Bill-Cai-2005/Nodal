@@ -2,6 +2,10 @@ import { Fragment } from "react";
 import type { StockData } from "../../utils/polygonApi";
 import { parseStockDescriptionRichText } from "../../utils/stockDescriptionRichText";
 import { toggleMarkdownBold } from "../../utils/markdownBoldToggle";
+import {
+  formatPercentChange,
+  percentChangeColor,
+} from "../../utils/watchlistUtils";
 
 type Props = {
   data: StockData[];
@@ -196,19 +200,22 @@ const CustomWatchlistsTable = ({
                   <td style={{ padding: "0.75rem" }}>{formatValue(row["Starting Price"])}</td>
                   <td style={{ padding: "0.75rem" }}>{formatValue(row["Current Price"])}</td>
                   <td style={{ padding: "0.75rem" }}>{formatValue(row["Market Cap"])}</td>
-                  <td style={{ padding: "0.75rem", color: (row["Daily Stock Change %"] || 0) >= 0 ? "#008000" : "#dc2626" }}>
-                    {row["Daily Stock Change %"] !== null ? `${row["Daily Stock Change %"].toFixed(2)}%` : "N/A"}
+                  <td
+                    style={{
+                      padding: "0.75rem",
+                      color: percentChangeColor(row["Daily Stock Change %"]),
+                    }}
+                  >
+                    {formatPercentChange(row["Daily Stock Change %"])}
                   </td>
                   {showCustomDatesChange && (
                     <td
                       style={{
                         padding: "0.75rem",
-                        color: (row["Custom Dates Change %"] || 0) >= 0 ? "#008000" : "#dc2626",
+                        color: percentChangeColor(row["Custom Dates Change %"]),
                       }}
                     >
-                      {row["Custom Dates Change %"] !== null
-                        ? `${row["Custom Dates Change %"].toFixed(2)}%`
-                        : "N/A"}
+                      {formatPercentChange(row["Custom Dates Change %"])}
                     </td>
                   )}
                   <td style={{ padding: "0.75rem" }}>{formatVolume(row.Volume)}</td>

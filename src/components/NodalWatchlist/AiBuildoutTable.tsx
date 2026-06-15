@@ -7,6 +7,10 @@ import {
   isKeyTag,
   sortTagsWithKeysFirst,
 } from "../../utils/tagUtils";
+import {
+  formatPercentChange,
+  percentChangeColor,
+} from "../../utils/watchlistUtils";
 
 type RowData = StockData & {
   Description?: string;
@@ -318,29 +322,25 @@ const AiBuildoutTable = ({
                   <td
                     style={{
                       padding: "0.75rem",
-                      color:
-                        (row["Daily Stock Change %"] || 0) >= 0
-                          ? "#008000"
-                          : "#dc2626",
+                      color: percentChangeColor(row["Daily Stock Change %"]),
                     }}
                   >
-                    {row.isManual || row["Daily Stock Change %"] === null
+                    {row.isManual
                       ? "N/A"
-                      : `${row["Daily Stock Change %"].toFixed(2)}%`}
+                      : formatPercentChange(row["Daily Stock Change %"])}
                   </td>
                   {showCustomDatesChange && (
                     <td
                       style={{
                         padding: "0.75rem",
-                        color:
-                          (row["Custom Dates Change %"] || 0) >= 0
-                            ? "#008000"
-                            : "#dc2626",
+                        color: percentChangeColor(
+                          row["Custom Dates Change %"],
+                        ),
                       }}
                     >
-                      {row.isManual || row["Custom Dates Change %"] === null
+                      {row.isManual
                         ? "N/A"
-                        : `${row["Custom Dates Change %"].toFixed(2)}%`}
+                        : formatPercentChange(row["Custom Dates Change %"])}
                     </td>
                   )}
                   <td style={{ padding: "0.75rem" }}>

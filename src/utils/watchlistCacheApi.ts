@@ -6,11 +6,11 @@ export const AI_BUILDOUT_WATCHLIST_NAME = "AI Buildout";
 
 export const RESOURCE_TAB_AREAS_OF_INTEREST_LABEL = "Areas of Interest";
 export const AREAS_OF_INTEREST_DESCRIPTION =
-  "A list of themes and sectors we are tracking closely. Omits the AI buildout which we think deserves it's own section.";
+  "Everything we're interested in outside of AI.";
 export const UNIVERSAL_WATCHLIST_DESCRIPTION =
-  "The full NYSE and NASDAQ universe with live market data. Filter by market cap, compare performance over custom date ranges, and pull AI-generated company summaries.";
+  "The full NYSE and NASDAQ universe with live market data.";
 export const AI_BUILDOUT_DESCRIPTION =
-  "The central theme of the market. Select tags to filter the watchlist, Nodal's key AI themes are highlighted.";
+  "The central theme of the market.";
 export type CustomWatchlistDbEntry = {
   name: string;
   description?: string;

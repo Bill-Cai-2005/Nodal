@@ -21,12 +21,27 @@ function normalizeResourceTab(value: unknown): string {
 }
 
 async function migrateLegacyResourceTabs() {
+  const missingTabFilter = {
+    $or: [
+      { resourceTab: { $exists: false } },
+      { resourceTab: "" },
+      { resourceTab: null },
+    ],
+  };
   await CustomWatchlist.updateMany(
-    { $or: [{ resourceTab: { $exists: false } }, { resourceTab: "" }] },
+    { name: AI_BUILDOUT_NAME, ...missingTabFilter },
+    { $set: { resourceTab: DEFAULT_RESOURCE_TAB } },
+  );
+  await CustomWatchlist.updateMany(
+    { name: { $ne: AI_BUILDOUT_NAME }, ...missingTabFilter },
+    { $set: { resourceTab: AREAS_OF_INTEREST_TAB } },
+  );
+  await CustomWatchlist.updateMany(
+    { name: AI_BUILDOUT_NAME, resourceTab: AREAS_OF_INTEREST_TAB },
     { $set: { resourceTab: DEFAULT_RESOURCE_TAB } },
   );
   await CustomWatchlistCategory.updateMany(
-    { $or: [{ resourceTab: { $exists: false } }, { resourceTab: "" }] },
+    { $or: [{ resourceTab: { $exists: false } }, { resourceTab: "" }, { resourceTab: null }] },
     { $set: { resourceTab: DEFAULT_RESOURCE_TAB } },
   );
 }
@@ -347,7 +362,9 @@ router.get("/custom-watchlists", async (req: Request, res: Response) => {
     const watchlistFilter =
       resourceTab === AREAS_OF_INTEREST_TAB
         ? { resourceTab, name: { $ne: AI_BUILDOUT_NAME } }
-        : { resourceTab };
+        : resourceTab === DEFAULT_RESOURCE_TAB
+          ? { $or: [{ resourceTab: DEFAULT_RESOURCE_TAB }, { name: AI_BUILDOUT_NAME }] }
+          : { resourceTab };
     const docs = await CustomWatchlist.find(watchlistFilter).sort({ order: 1, name: 1 });
     return res.json({
       watchlists: docs.map((d: any) => ({
@@ -383,7 +400,9 @@ router.put("/custom-watchlists/:name", async (req: Request, res: Response) => {
     if (!name) {
       return res.status(400).json({ error: "Watchlist name is required" });
     }
-    const resourceTab = normalizeResourceTab(resource_tab);
+    const resourceTab = isAiBuildoutWatchlistName(name)
+      ? DEFAULT_RESOURCE_TAB
+      : normalizeResourceTab(resource_tab);
     if (
       isAiBuildoutWatchlistName(name) &&
       resourceTab === AREAS_OF_INTEREST_TAB
@@ -447,6 +466,7 @@ router.put("/custom-watchlists/:name", async (req: Request, res: Response) => {
         : null;
 
     // Overwrite existing watchlist payload so refresh replaces previous rows.
+    const existing = await CustomWatchlist.findOne({ name });
     const doc = await CustomWatchlist.findOneAndUpdate(
       { name },
       {
@@ -460,11 +480,19 @@ router.put("/custom-watchlists/:name", async (req: Request, res: Response) => {
         stockSubcategories: normalizedStockSubcategories,
         ...(normalizedStockTags !== undefined
           ? { stockTags: normalizedStockTags }
-          : {}),
+          : existing?.stockTags
+            ? { stockTags: existing.stockTags }
+            : {}),
         ...(normalizedTagDescriptions !== undefined
           ? { tagDescriptions: normalizedTagDescriptions }
-          : {}),
-        ...(normalizedKeyTags !== undefined ? { keyTags: normalizedKeyTags } : {}),
+          : existing?.tagDescriptions
+            ? { tagDescriptions: existing.tagDescriptions }
+            : {}),
+        ...(normalizedKeyTags !== undefined
+          ? { keyTags: normalizedKeyTags }
+          : existing?.keyTags
+            ? { keyTags: existing.keyTags }
+            : {}),
         data: normalizedData,
         lastRefreshed,
       },

@@ -25,6 +25,20 @@ export const renameKey = <T extends Record<string, any>>(
   return next;
 };
 
+export const formatPercentChange = (
+  value: number | null | undefined,
+): string => {
+  if (typeof value !== "number" || Number.isNaN(value)) return "N/A";
+  return `${value.toFixed(2)}%`;
+};
+
+export const percentChangeColor = (
+  value: number | null | undefined,
+): string => {
+  if (typeof value !== "number" || Number.isNaN(value)) return "#374151";
+  return value >= 0 ? "#008000" : "#dc2626";
+};
+
 export const parseNumberInput = (raw: string): number | null => {
   const s = String(raw || "").trim().toUpperCase();
   if (!s) return null;
@@ -57,4 +71,3 @@ export const normalizeTickerInputLocal = (raw: string): string => {
 
   return upper;
 };
-

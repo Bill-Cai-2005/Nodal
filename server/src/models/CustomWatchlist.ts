@@ -37,5 +37,11 @@ const CustomWatchlistSchema: Schema = new Schema(
   { timestamps: true }
 );
 
-export default mongoose.models.CustomWatchlist ||
-  mongoose.model<ICustomWatchlist>("CustomWatchlist", CustomWatchlistSchema);
+if (mongoose.models.CustomWatchlist) {
+  delete mongoose.models.CustomWatchlist;
+}
+
+export default mongoose.model<ICustomWatchlist>(
+  "CustomWatchlist",
+  CustomWatchlistSchema,
+);

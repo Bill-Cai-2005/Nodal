@@ -41,6 +41,24 @@ const primaryButtonStyle = {
   fontWeight: 600,
 };
 
+const parseTagsInput = (raw: string): string[] =>
+  raw
+    .split(",")
+    .map((tag) => tag.trim())
+    .filter(Boolean);
+
+const normalizeStockTagsByTicker = (
+  tags: Record<string, string[]>,
+): Record<string, string[]> => {
+  const normalized: Record<string, string[]> = {};
+  for (const [ticker, tagList] of Object.entries(tags)) {
+    const key = ticker.trim().toUpperCase();
+    if (!key) continue;
+    normalized[key] = mergeUniqueTags([], Array.isArray(tagList) ? tagList : []);
+  }
+  return normalized;
+};
+
 type Props = {
   isAdmin?: boolean;
 };
@@ -116,6 +134,42 @@ const AiBuildoutWatchlist = ({ isAdmin = false }: Props) => {
 
   const showPopup = (message: string) => setPopupMessage(message);
 
+  const getMetadataForSave = (
+    overrides?: {
+      stockDescriptions?: Record<string, string>;
+      stockTags?: Record<string, string[]>;
+      tagDescriptions?: Record<string, string>;
+      keyTags?: string[];
+    },
+    editingTags = editingTagsByTicker,
+    tagDrafts = draftTagsByTicker,
+  ) => {
+    let nextTags = normalizeStockTagsByTicker(
+      overrides?.stockTags ?? stockTagsRef.current,
+    );
+    for (const [ticker, isEditing] of Object.entries(editingTags)) {
+      if (!isEditing) continue;
+      const draft = tagDrafts[ticker];
+      if (draft === undefined) continue;
+      const key = ticker.trim().toUpperCase();
+      const uniqueTags = mergeUniqueTags([], parseTagsInput(draft));
+      if (uniqueTags.length === 0) delete nextTags[key];
+      else nextTags[key] = uniqueTags;
+    }
+    stockTagsRef.current = nextTags;
+    setStockTags(nextTags);
+    setEditingTagsByTicker({});
+
+    return {
+      stockDescriptions:
+        overrides?.stockDescriptions ?? stockDescriptionsRef.current,
+      stockTags: nextTags,
+      tagDescriptions:
+        overrides?.tagDescriptions ?? tagDescriptionsRef.current,
+      keyTags: overrides?.keyTags ?? keyTagsRef.current,
+    };
+  };
+
   const saveToDb = async (
     nextTickers: string[],
     nextData: StockData[],
@@ -127,6 +181,7 @@ const AiBuildoutWatchlist = ({ isAdmin = false }: Props) => {
       keyTags?: string[];
     },
   ) => {
+    const metadata = getMetadataForSave(overrides);
     await saveCustomWatchlistToDb(
       AI_BUILDOUT_WATCHLIST_NAME,
       nextTickers,
@@ -137,12 +192,7 @@ const AiBuildoutWatchlist = ({ isAdmin = false }: Props) => {
         order: 0,
         category: "Uncategorized",
         resourceTab: RESOURCE_TAB_AI_BUILDOUT,
-        stockDescriptions:
-          overrides?.stockDescriptions ?? stockDescriptionsRef.current,
-        stockTags: overrides?.stockTags ?? stockTagsRef.current,
-        tagDescriptions:
-          overrides?.tagDescriptions ?? tagDescriptionsRef.current,
-        keyTags: overrides?.keyTags ?? keyTagsRef.current,
+        ...metadata,
       },
     );
   };
@@ -156,10 +206,7 @@ const AiBuildoutWatchlist = ({ isAdmin = false }: Props) => {
           resp.watchlists?.[0];
         if (!wl) return;
 
-        const loadedTags: Record<string, string[]> = {};
-        for (const [ticker, tags] of Object.entries(wl.stock_tags || {})) {
-          loadedTags[ticker] = Array.isArray(tags) ? tags : [];
-        }
+        const loadedTags = normalizeStockTagsByTicker(wl.stock_tags || {});
 
         setTickers(wl.tickers || []);
         setWatchlistData((wl.data || []) as StockData[]);
@@ -477,12 +524,13 @@ const AiBuildoutWatchlist = ({ isAdmin = false }: Props) => {
   };
 
   const handleSaveTags = async (ticker: string, tags: string[]) => {
+    const normalizedTicker = ticker.trim().toUpperCase();
     const uniqueTags = mergeUniqueTags([], tags);
-    const nextTags = { ...stockTags, [ticker]: uniqueTags };
-    if (uniqueTags.length === 0) delete nextTags[ticker];
+    const nextTags = { ...stockTags, [normalizedTicker]: uniqueTags };
+    if (uniqueTags.length === 0) delete nextTags[normalizedTicker];
     stockTagsRef.current = nextTags;
     setStockTags(nextTags);
-    setEditingTagsByTicker((prev) => ({ ...prev, [ticker]: false }));
+    setEditingTagsByTicker((prev) => ({ ...prev, [normalizedTicker]: false }));
     try {
       await saveToDb(tickers, watchlistData, null, { stockTags: nextTags });
     } catch (e: any) {

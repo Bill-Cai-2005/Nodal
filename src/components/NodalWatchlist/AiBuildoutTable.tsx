@@ -133,8 +133,9 @@ const AiBuildoutTable = ({
   ];
 
   const renderTags = (ticker: string, liveTags: string[]) => {
-    const isEditingTags = editingTagsByTicker[ticker] ?? false;
-    const draftTags = draftTagsByTicker[ticker] ?? liveTags.join(", ");
+    const tagKey = ticker.trim().toUpperCase();
+    const isEditingTags = editingTagsByTicker[tagKey] ?? false;
+    const draftTags = draftTagsByTicker[tagKey] ?? liveTags.join(", ");
     const displayTags = sortTagsWithKeysFirst(liveTags, keyTags);
 
     const renderTagPill = (tag: string) => {
@@ -191,21 +192,21 @@ const AiBuildoutTable = ({
         <input
           type="text"
           value={draftTags}
-          onChange={(e) => onDraftTagsChange?.(ticker, e.target.value)}
+          onChange={(e) => onDraftTagsChange?.(tagKey, e.target.value)}
           onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => {
             if (e.key === "Escape") {
               e.preventDefault();
-              onCancelEditTags?.(ticker);
+              onCancelEditTags?.(tagKey);
             }
             if (e.key === "Enter") {
               e.preventDefault();
-              commitTags(ticker, e.currentTarget.value);
+              commitTags(tagKey, e.currentTarget.value);
             }
           }}
           onBlur={(e) => {
-            if (committingTagsForTickerRef.current === ticker) return;
-            commitTags(ticker, e.currentTarget.value);
+            if (committingTagsForTickerRef.current === tagKey) return;
+            commitTags(tagKey, e.currentTarget.value);
           }}
           placeholder="lithography, semis"
           autoFocus
@@ -223,7 +224,7 @@ const AiBuildoutTable = ({
           onMouseDown={(e) => e.preventDefault()}
           onClick={(e) => {
             e.stopPropagation();
-            commitTags(ticker, draftTags);
+            commitTags(tagKey, draftTags);
           }}
           style={{
             padding: "0.35rem 0.6rem",

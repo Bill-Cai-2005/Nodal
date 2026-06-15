@@ -89,29 +89,6 @@ export async function saveCustomWatchlistToDb(
   return await res.json();
 }
 
-export async function saveStockTagsForTickerToDb(
-  name: string,
-  ticker: string,
-  tags: string[],
-): Promise<Record<string, string[]>> {
-  const res = await fetch(
-    getApiEndpoint(
-      `/api/watchlist-cache/custom-watchlists/${encodeURIComponent(name)}/stock-tags`,
-    ),
-    {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ticker, tags }),
-    },
-  );
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Failed to save stock tags (${res.status}): ${text}`);
-  }
-  const data = await res.json();
-  return data.stock_tags || {};
-}
-
 export async function deleteCustomWatchlistFromDb(
   name: string,
 ): Promise<{ ok: boolean }> {

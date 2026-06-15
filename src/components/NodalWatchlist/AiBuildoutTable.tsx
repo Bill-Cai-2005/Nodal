@@ -1,4 +1,4 @@
-import { Fragment, useRef } from "react";
+import { Fragment } from "react";
 import type { StockData } from "../../utils/polygonApi";
 import { parseStockDescriptionRichText } from "../../utils/stockDescriptionRichText";
 import { toggleMarkdownBold } from "../../utils/markdownBoldToggle";
@@ -74,18 +74,6 @@ const AiBuildoutTable = ({
   onRemoveTicker,
   isEditMode = false,
 }: Props) => {
-  const committingTagsForTickerRef = useRef<string | null>(null);
-
-  const commitTags = (ticker: string, raw: string) => {
-    committingTagsForTickerRef.current = ticker;
-    onSaveTags?.(ticker, parseTagsInput(raw));
-    window.setTimeout(() => {
-      if (committingTagsForTickerRef.current === ticker) {
-        committingTagsForTickerRef.current = null;
-      }
-    }, 0);
-  };
-
   if (data.length === 0) {
     return (
       <div
@@ -185,62 +173,35 @@ const AiBuildoutTable = ({
     }
 
     return (
-      <div
-        style={{ display: "flex", gap: "0.35rem", alignItems: "center" }}
+      <input
+        type="text"
+        value={draftTags}
+        onChange={(e) => onDraftTagsChange?.(tagKey, e.target.value)}
         onClick={(e) => e.stopPropagation()}
-      >
-        <input
-          type="text"
-          value={draftTags}
-          onChange={(e) => onDraftTagsChange?.(tagKey, e.target.value)}
-          onClick={(e) => e.stopPropagation()}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") {
-              e.preventDefault();
-              onCancelEditTags?.(tagKey);
-            }
-            if (e.key === "Enter") {
-              e.preventDefault();
-              commitTags(tagKey, e.currentTarget.value);
-            }
-          }}
-          onBlur={(e) => {
-            if (committingTagsForTickerRef.current === tagKey) return;
-            commitTags(tagKey, e.currentTarget.value);
-          }}
-          placeholder="lithography, semis"
-          autoFocus
-          style={{
-            flex: 1,
-            minWidth: "140px",
-            padding: "0.35rem 0.5rem",
-            borderRadius: "4px",
-            border: "1px solid #d1d5db",
-            fontSize: "0.85rem",
-          }}
-        />
-        <button
-          type="button"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={(e) => {
-            e.stopPropagation();
-            commitTags(tagKey, draftTags);
-          }}
-          style={{
-            padding: "0.35rem 0.6rem",
-            borderRadius: "4px",
-            border: "none",
-            backgroundColor: "#000000",
-            color: "#ffffff",
-            fontSize: "0.8rem",
-            fontWeight: 600,
-            cursor: "pointer",
-            whiteSpace: "nowrap",
-          }}
-        >
-          Save
-        </button>
-      </div>
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            e.preventDefault();
+            onCancelEditTags?.(tagKey);
+          }
+          if (e.key === "Enter") {
+            e.preventDefault();
+            onSaveTags?.(tagKey, parseTagsInput(e.currentTarget.value));
+          }
+        }}
+        onBlur={(e) =>
+          onSaveTags?.(tagKey, parseTagsInput(e.currentTarget.value))
+        }
+        placeholder="lithography, semis"
+        autoFocus
+        style={{
+          width: "100%",
+          minWidth: "160px",
+          padding: "0.35rem 0.5rem",
+          borderRadius: "4px",
+          border: "1px solid #d1d5db",
+          fontSize: "0.85rem",
+        }}
+      />
     );
   };
 

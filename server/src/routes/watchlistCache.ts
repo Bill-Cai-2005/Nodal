@@ -444,55 +444,6 @@ router.put("/custom-watchlists/:name", async (req: Request, res: Response) => {
   }
 });
 
-// PATCH /api/watchlist-cache/custom-watchlists/:name/stock-tags
-// Body: { ticker: string, tags: string[] } — updates one ticker's tags without touching tickers/data
-router.patch("/custom-watchlists/:name/stock-tags", async (req: Request, res: Response) => {
-  try {
-    await connectDB();
-    const name = String(req.params.name || "").trim();
-    const { ticker, tags } = req.body || {};
-
-    if (!name) {
-      return res.status(400).json({ error: "Watchlist name is required" });
-    }
-    const normalizedTicker = String(ticker || "").trim().toUpperCase();
-    if (!normalizedTicker) {
-      return res.status(400).json({ error: "ticker is required" });
-    }
-    if (!Array.isArray(tags)) {
-      return res.status(400).json({ error: "tags must be an array" });
-    }
-
-    const existing = await CustomWatchlist.findOne({ name });
-    if (!existing) {
-      return res.status(404).json({ error: "Watchlist not found" });
-    }
-
-    const nextTags = normalizeStockTags(existing.stockTags || {});
-    const uniqueTags = Array.from(
-      new Set(
-        tags.map((t: unknown) => String(t || "").trim()).filter(Boolean),
-      ),
-    );
-    if (uniqueTags.length === 0) {
-      delete nextTags[normalizedTicker];
-    } else {
-      nextTags[normalizedTicker] = uniqueTags;
-    }
-
-    const doc = await CustomWatchlist.findOneAndUpdate(
-      { name },
-      { stockTags: nextTags },
-      { new: true },
-    );
-
-    return res.json({ stock_tags: doc?.stockTags || {} });
-  } catch (error: any) {
-    console.error("Error saving stock tags:", error);
-    return res.status(500).json({ error: error.message || "Failed to save stock tags" });
-  }
-});
-
 // DELETE /api/watchlist-cache/custom-watchlists/:name
 router.delete("/custom-watchlists/:name", async (req: Request, res: Response) => {
   try {

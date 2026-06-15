@@ -5,40 +5,51 @@ import Footer from "../components/Footer";
 import { useResponsivePadding } from "../hooks/useResponsivePadding";
 import UniversalWatchlist from "../components/NodalWatchlist/UniversalWatchlist";
 import CustomWatchlists from "../components/NodalWatchlist/CustomWatchlists";
+import AiBuildoutWatchlist from "../components/NodalWatchlist/AiBuildoutWatchlist";
 import { verifyToolPassword } from "../utils/adminApi";
+import {
+  RESOURCE_TAB_AI_BUILDOUT,
+  RESOURCE_TAB_WATCHLIST,
+  RESOURCE_TAB_AREAS_OF_INTEREST_LABEL,
+} from "../utils/watchlistCacheApi";
 
-const REQUIRE_ADMIN_PASSCODE = true;
 const NodalWatchlist = () => {
   const navigate = useNavigate();
   const responsivePaddingTop = useResponsivePadding();
-  const [isAdmin, setIsAdmin] = useState<boolean>(!REQUIRE_ADMIN_PASSCODE);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
-  const [activeTab, setActiveTab] = useState<"universal" | "custom">("custom");
-  const hasAccess = !REQUIRE_ADMIN_PASSCODE || isAdmin;
-  const canViewUniversal = hasAccess;
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [unlocking, setUnlocking] = useState(false);
+  const [activeTab, setActiveTab] = useState<string>(RESOURCE_TAB_WATCHLIST);
 
   useEffect(() => {
-    if (!canViewUniversal) {
-      setActiveTab("custom");
+    if (!isAdmin && activeTab === "universal") {
+      setActiveTab(RESOURCE_TAB_WATCHLIST);
     }
-  }, [canViewUniversal]);
+  }, [isAdmin, activeTab]);
 
   const handleUnlock = async () => {
-    if (!adminPassword.trim()) {
-      alert("Please enter a password");
+    const password = adminPassword.trim();
+    if (!password) {
+      setPasswordError("Please enter a password.");
       return;
     }
 
+    setUnlocking(true);
+    setPasswordError(null);
     try {
-      const result = await verifyToolPassword(adminPassword.trim());
+      const result = await verifyToolPassword(password);
       if (!result.ok) {
-        alert(result.error || "Incorrect password");
+        setPasswordError(result.error || "Incorrect password.");
         return;
       }
       setIsAdmin(true);
       setAdminPassword("");
+      setPasswordError(null);
     } catch (e: any) {
-      alert(e?.message || "Failed to validate password");
+      setPasswordError(e?.message || "Failed to validate password.");
+    } finally {
+      setUnlocking(false);
     }
   };
 
@@ -72,7 +83,7 @@ const NodalWatchlist = () => {
     transition: "all 0.2s ease",
   };
 
-  const getTabStyle = (tab: "universal" | "custom") => ({
+  const getTabStyle = (tab: string) => ({
     ...tabStyle,
     color: activeTab === tab ? "#000000" : "#666666",
     borderBottom:
@@ -104,108 +115,50 @@ const NodalWatchlist = () => {
             textAlign: "center",
           }}
         >
-          Watchlist
+          Resources
         </h1>
 
-        <>
-          <div
-            style={{
-              display: "flex",
-              gap: "1rem",
-              marginBottom: "2rem",
-              justifyContent: "center",
-            }}
-          >
-            {canViewUniversal && (
-              <button onClick={() => setActiveTab("universal")} style={getTabStyle("universal")}>
-                Universal Watchlist
-              </button>
-            )}
-            <button onClick={() => setActiveTab("custom")} style={getTabStyle("custom")}>
-              Custom Watchlists
-            </button>
-          </div>
-
-          {activeTab === "universal" ? (
-            <UniversalWatchlist />
-          ) : (
-            <CustomWatchlists isAdmin={hasAccess} />
-          )}
-        </>
-
-        {REQUIRE_ADMIN_PASSCODE && !hasAccess && (
-          <div
-            style={{
-              textAlign: "center",
-              color: "#666666",
-              marginBottom: "1.5rem",
-            }}
-          >
-            Enter the admin password to access tools.
-          </div>
-        )}
-
-        {REQUIRE_ADMIN_PASSCODE && !hasAccess && (
-          <div
-            style={{
-              marginTop: "2rem",
-              marginBottom: "1.5rem",
-              padding: "1rem 1.25rem",
-              borderRadius: "8px",
-              backgroundColor: "#ffffff",
-              border: "1px solid #e5e7eb",
-              maxWidth: "420px",
-              marginInline: "auto",
-            }}
-          >
-            <h2
-              style={{
-                fontFamily: "Montserrat, sans-serif",
-                fontSize: "1rem",
-                fontWeight: 600,
-                marginBottom: "0.75rem",
-              }}
+        <div
+          style={{
+            display: "flex",
+            gap: "1rem",
+            marginBottom: "2rem",
+            justifyContent: "center",
+            flexWrap: "wrap",
+          }}
+        >
+          {isAdmin && (
+            <button
+              onClick={() => setActiveTab("universal")}
+              style={getTabStyle("universal")}
             >
-              Admin Tools
-            </h2>
-            <div style={{ display: "flex", gap: "0.75rem" }}>
-              <input
-                type="password"
-                value={adminPassword}
-                onChange={(e) => setAdminPassword(e.target.value)}
-                placeholder="Enter admin password"
-                style={{
-                  flex: 1,
-                  padding: "0.5rem 0.75rem",
-                  borderRadius: "4px",
-                  border: "1px solid #d1d5db",
-                  fontSize: "0.875rem",
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    handleUnlock();
-                  }
-                }}
-              />
-              <button
-                type="button"
-                onClick={handleUnlock}
-                style={{
-                  padding: "0.5rem 1rem",
-                  backgroundColor: "#000000",
-                  color: "#ffffff",
-                  borderRadius: "6px",
-                  border: "none",
-                  cursor: "pointer",
-                  fontSize: "0.875rem",
-                  fontWeight: 600,
-                  whiteSpace: "nowrap",
-                }}
-              >
-                Unlock
-              </button>
-            </div>
-          </div>
+              Universal Watchlist
+            </button>
+          )}
+          <button
+            onClick={() => setActiveTab(RESOURCE_TAB_WATCHLIST)}
+            style={getTabStyle(RESOURCE_TAB_WATCHLIST)}
+          >
+            {RESOURCE_TAB_AREAS_OF_INTEREST_LABEL}
+          </button>
+          <button
+            onClick={() => setActiveTab(RESOURCE_TAB_AI_BUILDOUT)}
+            style={getTabStyle(RESOURCE_TAB_AI_BUILDOUT)}
+          >
+            AI Buildout
+          </button>
+        </div>
+
+        {activeTab === "universal" && isAdmin ? (
+          <UniversalWatchlist />
+        ) : activeTab === RESOURCE_TAB_AI_BUILDOUT ? (
+          <AiBuildoutWatchlist isAdmin={isAdmin} />
+        ) : (
+          <CustomWatchlists
+            key={activeTab}
+            isAdmin={isAdmin}
+            resourceTab={activeTab}
+          />
         )}
 
         <div
@@ -220,6 +173,87 @@ const NodalWatchlist = () => {
             e.currentTarget.style.transform = "scale(1)";
           }}
         />
+
+        {!isAdmin && (
+          <div
+            style={{
+              marginTop: "1rem",
+              padding: "1.25rem",
+              borderRadius: "8px",
+              backgroundColor: "#ffffff",
+              border: "1px solid #e5e7eb",
+              maxWidth: "480px",
+              marginInline: "auto",
+              width: "100%",
+            }}
+          >
+            <h2
+              style={{
+                fontFamily: "Montserrat, sans-serif",
+                fontSize: "1rem",
+                fontWeight: 600,
+                marginBottom: "0.5rem",
+                textAlign: "center",
+              }}
+            >
+              Admin Tools
+            </h2>
+            <div style={{ display: "flex", gap: "0.75rem" }}>
+              <input
+                type="password"
+                value={adminPassword}
+                onChange={(e) => {
+                  setAdminPassword(e.target.value);
+                  if (passwordError) setPasswordError(null);
+                }}
+                placeholder="Enter admin password"
+                style={{
+                  flex: 1,
+                  padding: "0.6rem 0.75rem",
+                  borderRadius: "4px",
+                  border: "1px solid #d1d5db",
+                  fontSize: "0.875rem",
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    void handleUnlock();
+                  }
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => void handleUnlock()}
+                disabled={unlocking}
+                style={{
+                  padding: "0.6rem 1rem",
+                  backgroundColor: "#000000",
+                  color: "#ffffff",
+                  borderRadius: "6px",
+                  border: "none",
+                  cursor: unlocking ? "not-allowed" : "pointer",
+                  fontSize: "0.875rem",
+                  fontWeight: 600,
+                  whiteSpace: "nowrap",
+                  opacity: unlocking ? 0.6 : 1,
+                }}
+              >
+                {unlocking ? "Checking…" : "Unlock"}
+              </button>
+            </div>
+            {passwordError && (
+              <p
+                style={{
+                  margin: "0.75rem 0 0",
+                  color: "#dc2626",
+                  fontSize: "0.875rem",
+                  textAlign: "center",
+                }}
+              >
+                {passwordError}
+              </p>
+            )}
+          </div>
+        )}
       </div>
       <Footer />
     </div>

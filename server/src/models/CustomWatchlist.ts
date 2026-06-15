@@ -5,9 +5,13 @@ export interface ICustomWatchlist extends Document {
   description: string;
   order: number;
   category: string;
+  resourceTab: string;
   tickers: string[];
   stockDescriptions: Record<string, string>;
   stockSubcategories: Record<string, string>;
+  stockTags: Record<string, string[]>;
+  tagDescriptions: Record<string, string>;
+  keyTags: string[];
   data: any[];
   lastRefreshed: Date | null;
   createdAt: Date;
@@ -20,9 +24,13 @@ const CustomWatchlistSchema: Schema = new Schema(
     description: { type: String, required: true, default: "" },
     order: { type: Number, required: true, default: 0, index: true },
     category: { type: String, required: true, default: "Uncategorized", index: true },
+    resourceTab: { type: String, required: true, default: "ai-buildout", index: true },
     tickers: { type: [String], required: true, default: [] },
     stockDescriptions: { type: Schema.Types.Mixed, required: true, default: {} },
     stockSubcategories: { type: Schema.Types.Mixed, required: true, default: {} },
+    stockTags: { type: Schema.Types.Mixed, required: true, default: {} },
+    tagDescriptions: { type: Schema.Types.Mixed, required: true, default: {} },
+    keyTags: { type: [String], required: true, default: [] },
     data: { type: [Schema.Types.Mixed], required: true, default: [] },
     lastRefreshed: { type: Date, default: null },
   },

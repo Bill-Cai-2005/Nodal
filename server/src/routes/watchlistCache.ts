@@ -7,16 +7,204 @@ import CustomWatchlistCategory from "../models/CustomWatchlistCategory.js";
 
 const router = express.Router();
 const UNCATEGORIZED = "Uncategorized";
+const AI_BUILDOUT_NAME = "AI Buildout";
+const DEFAULT_RESOURCE_TAB = "ai-buildout";
+
+function normalizeResourceTab(value: unknown): string {
+  const tab = String(value || "").trim();
+  return tab || DEFAULT_RESOURCE_TAB;
+}
+
+async function migrateLegacyResourceTabs() {
+  await CustomWatchlist.updateMany(
+    { $or: [{ resourceTab: { $exists: false } }, { resourceTab: "" }] },
+    { $set: { resourceTab: DEFAULT_RESOURCE_TAB } },
+  );
+  await CustomWatchlistCategory.updateMany(
+    { $or: [{ resourceTab: { $exists: false } }, { resourceTab: "" }] },
+    { $set: { resourceTab: DEFAULT_RESOURCE_TAB } },
+  );
+}
+
+function normalizeStockTags(input: unknown): Record<string, string[]> {
+  const result: Record<string, string[]> = {};
+  if (!input || typeof input !== "object") return result;
+  for (const [ticker, tags] of Object.entries(input as Record<string, unknown>)) {
+    const normalizedTicker = String(ticker || "").trim().toUpperCase();
+    if (!normalizedTicker) continue;
+    const tagList = Array.isArray(tags)
+      ? tags.map((t) => String(t || "").trim()).filter(Boolean)
+      : typeof tags === "string" && tags.trim()
+        ? [tags.trim()]
+        : [];
+    const unique = Array.from(new Set(tagList));
+    if (unique.length > 0) result[normalizedTicker] = unique;
+  }
+  return result;
+}
+
+function normalizeTagDescriptions(input: unknown): Record<string, string> {
+  const result: Record<string, string> = {};
+  if (!input || typeof input !== "object") return result;
+  for (const [tag, desc] of Object.entries(input as Record<string, unknown>)) {
+    const label = String(tag || "").trim();
+    if (!label) continue;
+    result[label] = String(desc || "").trim();
+  }
+  return result;
+}
+
+function mergeTagDescriptions(
+  target: Record<string, string>,
+  source: Record<string, string>,
+) {
+  for (const [tag, desc] of Object.entries(source)) {
+    const label = String(tag || "").trim();
+    if (!label) continue;
+    const value = String(desc || "").trim();
+    if (value) target[label] = value;
+  }
+}
+
+function mergeTagsInto(
+  target: Record<string, string[]>,
+  source: Record<string, string[]>,
+) {
+  for (const [ticker, tags] of Object.entries(source)) {
+    const existing = target[ticker] || [];
+    target[ticker] = Array.from(new Set([...existing, ...tags]));
+  }
+}
+
+function normalizeKeyTags(input: unknown): string[] {
+  if (!Array.isArray(input)) return [];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const tag of input) {
+    const label = String(tag || "").trim();
+    if (!label) continue;
+    const key = label.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(label);
+  }
+  return result;
+}
+
+function mergeKeyTags(target: string[], source: string[]) {
+  const seen = new Set(target.map((t) => t.toLowerCase()));
+  for (const tag of source) {
+    const label = String(tag || "").trim();
+    if (!label) continue;
+    const key = label.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    target.push(label);
+  }
+}
+
+async function ensureAiBuildoutConsolidated() {
+  const docs = await CustomWatchlist.find({ resourceTab: DEFAULT_RESOURCE_TAB }).sort({
+    order: 1,
+    name: 1,
+  });
+  if (docs.length === 0) return;
+
+  const primary =
+    docs.find((d) => d.name === AI_BUILDOUT_NAME) || docs[0];
+
+  if (docs.length === 1 && primary.name === AI_BUILDOUT_NAME) {
+    return;
+  }
+
+  const mergedTickers = new Set<string>();
+  const mergedDescriptions: Record<string, string> = {};
+  const mergedTags: Record<string, string[]> = {};
+  const mergedTagDescriptions: Record<string, string> = {};
+  const mergedKeyTags: string[] = [];
+  const mergedDataByTicker: Record<string, any> = {};
+  let mergedDescription = "";
+  let latestRefreshed: Date | null = null;
+
+  for (const doc of docs) {
+    for (const ticker of doc.tickers || []) {
+      mergedTickers.add(String(ticker).trim().toUpperCase());
+    }
+    Object.assign(mergedDescriptions, doc.stockDescriptions || {});
+    mergeTagsInto(mergedTags, normalizeStockTags(doc.stockTags || {}));
+    mergeTagDescriptions(
+      mergedTagDescriptions,
+      normalizeTagDescriptions(doc.tagDescriptions || {}),
+    );
+    mergeKeyTags(mergedKeyTags, normalizeKeyTags(doc.keyTags || []));
+    for (const [ticker, sub] of Object.entries(doc.stockSubcategories || {})) {
+      const normalizedTicker = String(ticker || "").trim().toUpperCase();
+      const subValue = String(sub || "").trim();
+      if (!normalizedTicker || !subValue) continue;
+      const existing = mergedTags[normalizedTicker] || [];
+      if (!existing.includes(subValue)) {
+        mergedTags[normalizedTicker] = [...existing, subValue];
+      }
+    }
+    for (const row of doc.data || []) {
+      const ticker = String(row?.Ticker || "").trim().toUpperCase();
+      if (ticker) mergedDataByTicker[ticker] = row;
+    }
+    if (!mergedDescription && doc.description) {
+      mergedDescription = doc.description;
+    }
+    if (doc.lastRefreshed) {
+      if (!latestRefreshed || doc.lastRefreshed > latestRefreshed) {
+        latestRefreshed = doc.lastRefreshed;
+      }
+    }
+  }
+
+  const mergedData = Object.values(mergedDataByTicker);
+  const namesToDelete = docs
+    .map((d) => d.name)
+    .filter((name) => name !== AI_BUILDOUT_NAME);
+
+  await CustomWatchlist.findOneAndUpdate(
+    { name: AI_BUILDOUT_NAME },
+    {
+      name: AI_BUILDOUT_NAME,
+      description: mergedDescription,
+      order: 0,
+      category: UNCATEGORIZED,
+      resourceTab: DEFAULT_RESOURCE_TAB,
+      tickers: Array.from(mergedTickers),
+      stockDescriptions: mergedDescriptions,
+      stockSubcategories: {},
+      stockTags: mergedTags,
+      tagDescriptions: mergedTagDescriptions,
+      keyTags: mergedKeyTags,
+      data: mergedData,
+      lastRefreshed: latestRefreshed,
+    },
+    { upsert: true, new: true },
+  );
+
+  if (namesToDelete.length > 0) {
+    await CustomWatchlist.deleteMany({ name: { $in: namesToDelete } });
+  }
+}
 
 // GET /api/watchlist-cache/custom-watchlist-categories
-router.get("/custom-watchlist-categories", async (_req: Request, res: Response) => {
+router.get("/custom-watchlist-categories", async (req: Request, res: Response) => {
   try {
     await connectDB();
-    const docs = await CustomWatchlistCategory.find({}).sort({ order: 1, name: 1 });
+    await migrateLegacyResourceTabs();
+    const resourceTab = normalizeResourceTab(req.query.resourceTab);
+    const docs = await CustomWatchlistCategory.find({ resourceTab }).sort({
+      order: 1,
+      name: 1,
+    });
     return res.json({
       categories: docs.map((d: any) => ({
         name: d.name,
         order: Number.isFinite(d.order) ? d.order : 0,
+        resource_tab: d.resourceTab || DEFAULT_RESOURCE_TAB,
       })),
     });
   } catch (error: any) {
@@ -31,19 +219,21 @@ router.put("/custom-watchlist-categories/:name", async (req: Request, res: Respo
   try {
     await connectDB();
     const name = String(req.params.name || "").trim();
-    const { order } = req.body || {};
+    const { order, resource_tab } = req.body || {};
     if (!name) {
       return res.status(400).json({ error: "Category name is required" });
     }
     const normalizedOrder = Number.isFinite(Number(order)) ? Number(order) : 0;
+    const resourceTab = normalizeResourceTab(resource_tab);
     const doc = await CustomWatchlistCategory.findOneAndUpdate(
-      { name },
-      { name, order: normalizedOrder },
+      { name, resourceTab },
+      { name, order: normalizedOrder, resourceTab },
       { upsert: true, new: true }
     );
     return res.json({
       name: doc.name,
       order: Number.isFinite(doc.order) ? doc.order : 0,
+      resource_tab: doc.resourceTab || DEFAULT_RESOURCE_TAB,
     });
   } catch (error: any) {
     console.error("Error saving custom watchlist category:", error);
@@ -56,11 +246,12 @@ router.delete("/custom-watchlist-categories/:name", async (req: Request, res: Re
   try {
     await connectDB();
     const name = String(req.params.name || "").trim();
+    const resourceTab = normalizeResourceTab(req.query.resourceTab);
     if (!name) {
       return res.status(400).json({ error: "Category name is required" });
     }
-    await CustomWatchlistCategory.deleteOne({ name });
-    await CustomWatchlist.deleteMany({ category: name });
+    await CustomWatchlistCategory.deleteOne({ name, resourceTab });
+    await CustomWatchlist.deleteMany({ category: name, resourceTab });
     return res.json({ ok: true });
   } catch (error: any) {
     console.error("Error deleting custom watchlist category:", error);
@@ -69,19 +260,28 @@ router.delete("/custom-watchlist-categories/:name", async (req: Request, res: Re
 });
 
 // GET /api/watchlist-cache/custom-watchlists
-router.get("/custom-watchlists", async (_req: Request, res: Response) => {
+router.get("/custom-watchlists", async (req: Request, res: Response) => {
   try {
     await connectDB();
-    const docs = await CustomWatchlist.find({}).sort({ order: 1, name: 1 });
+    await migrateLegacyResourceTabs();
+    if (normalizeResourceTab(req.query.resourceTab) === DEFAULT_RESOURCE_TAB) {
+      await ensureAiBuildoutConsolidated();
+    }
+    const resourceTab = normalizeResourceTab(req.query.resourceTab);
+    const docs = await CustomWatchlist.find({ resourceTab }).sort({ order: 1, name: 1 });
     return res.json({
       watchlists: docs.map((d: any) => ({
         name: d.name,
         description: d.description || "",
         order: Number.isFinite(d.order) ? d.order : 0,
         category: d.category || "",
+        resource_tab: d.resourceTab || DEFAULT_RESOURCE_TAB,
         tickers: d.tickers || [],
         stock_descriptions: d.stockDescriptions || {},
         stock_subcategories: d.stockSubcategories || {},
+        stock_tags: d.stockTags || {},
+        tag_descriptions: d.tagDescriptions || {},
+        key_tags: d.keyTags || [],
         data: d.data || [],
         last_refreshed: d.lastRefreshed || null,
       })),
@@ -98,7 +298,7 @@ router.put("/custom-watchlists/:name", async (req: Request, res: Response) => {
   try {
     await connectDB();
     const name = String(req.params.name || "").trim();
-    const { tickers, data, stock_descriptions, stock_subcategories, description, order, category, last_refreshed } = req.body || {};
+    const { tickers, data, stock_descriptions, stock_subcategories, stock_tags, tag_descriptions, key_tags, description, order, category, last_refreshed, resource_tab } = req.body || {};
 
     if (!name) {
       return res.status(400).json({ error: "Watchlist name is required" });
@@ -132,6 +332,14 @@ router.put("/custom-watchlists/:name", async (req: Request, res: Response) => {
         normalizedStockSubcategories[normalizedTicker] = String(sub || "").trim();
       }
     }
+    const normalizedStockTags =
+      stock_tags !== undefined ? normalizeStockTags(stock_tags) : undefined;
+    const normalizedTagDescriptions =
+      tag_descriptions !== undefined
+        ? normalizeTagDescriptions(tag_descriptions)
+        : undefined;
+    const normalizedKeyTags =
+      key_tags !== undefined ? normalizeKeyTags(key_tags) : undefined;
     const normalizedDescription = typeof description === "string" ? description : "";
     const normalizedOrder = Number.isFinite(Number(order)) ? Number(order) : 0;
     // Back-compat: older clients/watchlists may not include a category.
@@ -140,6 +348,7 @@ router.put("/custom-watchlists/:name", async (req: Request, res: Response) => {
       typeof category === "string" && category.trim()
         ? category.trim()
         : "Uncategorized";
+    const resourceTab = normalizeResourceTab(resource_tab);
     const parsedLastRefreshed =
       last_refreshed === null || last_refreshed === undefined
         ? null
@@ -157,9 +366,17 @@ router.put("/custom-watchlists/:name", async (req: Request, res: Response) => {
         description: normalizedDescription,
         order: normalizedOrder,
         category: normalizedCategory,
+        resourceTab,
         tickers: normalizedTickers,
         stockDescriptions: normalizedStockDescriptions,
         stockSubcategories: normalizedStockSubcategories,
+        ...(normalizedStockTags !== undefined
+          ? { stockTags: normalizedStockTags }
+          : {}),
+        ...(normalizedTagDescriptions !== undefined
+          ? { tagDescriptions: normalizedTagDescriptions }
+          : {}),
+        ...(normalizedKeyTags !== undefined ? { keyTags: normalizedKeyTags } : {}),
         data: normalizedData,
         lastRefreshed,
       },
@@ -171,9 +388,13 @@ router.put("/custom-watchlists/:name", async (req: Request, res: Response) => {
       description: doc.description || "",
       order: Number.isFinite(doc.order) ? doc.order : 0,
       category: doc.category || "",
+      resource_tab: doc.resourceTab || DEFAULT_RESOURCE_TAB,
       tickers: doc.tickers || [],
       stock_descriptions: doc.stockDescriptions || {},
       stock_subcategories: doc.stockSubcategories || {},
+      stock_tags: doc.stockTags || {},
+      tag_descriptions: doc.tagDescriptions || {},
+      key_tags: doc.keyTags || [],
       data: doc.data || [],
       last_refreshed: doc.lastRefreshed || null,
     });

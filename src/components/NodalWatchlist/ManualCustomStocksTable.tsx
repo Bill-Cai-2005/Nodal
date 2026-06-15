@@ -85,6 +85,7 @@ export type ManualCustomStocksTableProps = {
     ticker: string,
     value: string,
   ) => void;
+  showSubcategories?: boolean;
 };
 
 const ManualCustomStocksTable = ({
@@ -108,6 +109,7 @@ const ManualCustomStocksTable = ({
   onCancelEditSubcategory,
   onDraftSubcategoryChange,
   onSaveSubcategory,
+  showSubcategories = true,
 }: ManualCustomStocksTableProps) => {
   if (manualRows.length === 0) return null;
 
@@ -128,7 +130,9 @@ const ManualCustomStocksTable = ({
           <thead>
             <tr style={simpleTableStyles.headerRow}>
               <th style={simpleTableStyles.th}>Ticker</th>
-              <th style={simpleTableStyles.th}>Subcategory</th>
+              {showSubcategories && (
+                <th style={simpleTableStyles.th}>Subcategory</th>
+              )}
               <th style={simpleTableStyles.th}>Market Cap</th>
             </tr>
           </thead>
@@ -163,62 +167,64 @@ const ManualCustomStocksTable = ({
                     style={{ ...simpleTableStyles.tr, cursor: "pointer" }}
                   >
                     <td style={simpleTableStyles.td}>{ticker}</td>
-                    <td style={simpleTableStyles.td}>
-                      {!isAdmin ? (
-                        <span
-                          style={{ color: "#374151", whiteSpace: "nowrap" }}
-                        >
-                          {(liveSubcategory || "").trim() || "—"}
-                        </span>
-                      ) : !isEditingSubcategory ? (
-                        <span
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onStartEditSubcategory(watchlistName, ticker);
-                          }}
-                          style={simpleTableStyles.editableText}
-                          title="Click to edit"
-                        >
-                          {(liveSubcategory || "").trim() || "—"}
-                        </span>
-                      ) : (
-                        <input
-                          type="text"
-                          value={draftSubcategory}
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={(e) =>
-                            onDraftSubcategoryChange(
-                              watchlistName,
-                              ticker,
-                              e.target.value,
-                            )
-                          }
-                          onKeyDown={(e) => {
-                            if (e.key === "Escape") {
-                              e.preventDefault();
-                              onCancelEditSubcategory(watchlistName, ticker);
+                    {showSubcategories && (
+                      <td style={simpleTableStyles.td}>
+                        {!isAdmin ? (
+                          <span
+                            style={{ color: "#374151", whiteSpace: "nowrap" }}
+                          >
+                            {(liveSubcategory || "").trim() || "—"}
+                          </span>
+                        ) : !isEditingSubcategory ? (
+                          <span
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onStartEditSubcategory(watchlistName, ticker);
+                            }}
+                            style={simpleTableStyles.editableText}
+                            title="Click to edit"
+                          >
+                            {(liveSubcategory || "").trim() || "—"}
+                          </span>
+                        ) : (
+                          <input
+                            type="text"
+                            value={draftSubcategory}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) =>
+                              onDraftSubcategoryChange(
+                                watchlistName,
+                                ticker,
+                                e.target.value,
+                              )
                             }
-                            if (e.key === "Enter") {
-                              e.preventDefault();
+                            onKeyDown={(e) => {
+                              if (e.key === "Escape") {
+                                e.preventDefault();
+                                onCancelEditSubcategory(watchlistName, ticker);
+                              }
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                onSaveSubcategory(
+                                  watchlistName,
+                                  ticker,
+                                  draftSubcategory,
+                                );
+                              }
+                            }}
+                            onBlur={() =>
                               onSaveSubcategory(
                                 watchlistName,
                                 ticker,
                                 draftSubcategory,
-                              );
+                              )
                             }
-                          }}
-                          onBlur={() =>
-                            onSaveSubcategory(
-                              watchlistName,
-                              ticker,
-                              draftSubcategory,
-                            )
-                          }
-                          autoFocus
-                          style={simpleTableStyles.input}
-                        />
-                      )}
-                    </td>
+                            autoFocus
+                            style={simpleTableStyles.input}
+                          />
+                        )}
+                      </td>
+                    )}
                     <td style={simpleTableStyles.td}>
                       {formatValue(row["Market Cap"])}
                     </td>
@@ -229,7 +235,7 @@ const ManualCustomStocksTable = ({
                       key={`${watchlistName}-manual-row-expanded-${ticker}-${idx}`}
                     >
                       <td
-                        colSpan={3}
+                        colSpan={showSubcategories ? 3 : 2}
                         style={simpleTableStyles.expandedCell}
                         onClick={(e) => e.stopPropagation()}
                       >

@@ -84,25 +84,6 @@ const MobileHome = () => {
           Research
         </div>
         <div
-          onClick={() => navigate("/tools")}
-          style={{
-            fontFamily: "Montserrat, sans-serif",
-            fontSize: "1.25rem",
-            color: "#8B0000",
-            cursor: "pointer",
-            textDecoration: "none",
-            transition: "opacity 0.2s ease",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.opacity = "0.7";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.opacity = "1";
-          }}
-        >
-          Tools
-        </div>
-        <div
           onClick={() => navigate("/newsletter")}
           style={{
             fontFamily: "Montserrat, sans-serif",
@@ -119,7 +100,7 @@ const MobileHome = () => {
             e.currentTarget.style.opacity = "1";
           }}
         >
-          Nodal Watchlist
+          Newsletter
         </div>
       </div>
       <div className="mobile-footer" style={footerStyle}>

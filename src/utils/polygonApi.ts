@@ -133,9 +133,11 @@ const nowMs = (): number => {
   return Date.now();
 };
 
+const ALLOWED_EQUITY_TYPES = new Set(["CS", "ADRC", "ADRP", "ADRW"]);
+
 const isIndividualCompanyResult = (row: any): boolean => {
   const instrumentType = String(row?.type || "").toUpperCase().trim();
-  if (instrumentType !== "CS") return false;
+  if (!ALLOWED_EQUITY_TYPES.has(instrumentType)) return false;
 
   const name = String(row?.name || "").toUpperCase();
   const blockedTokens = [
@@ -153,27 +155,64 @@ const isIndividualCompanyResult = (row: any): boolean => {
   return !blockedTokens.some((token) => name.includes(token));
 };
 
-export const fetchTickerReference = async (ticker: string, signal?: AbortSignal): Promise<TickerReference | null> => {
-  try {
-    const normalized = normalizeTickerInput(ticker);
-    const data = await polygonGet(`/v3/reference/tickers/${normalized}`, undefined, 20, 4, signal);
-    const row = data?.results || {};
-    if (!row || !isIndividualCompanyResult(row)) return null;
+const fetchTickerReferenceRow = async (
+  ticker: string,
+  signal?: AbortSignal,
+): Promise<{ row: any | null; error?: string }> => {
+  const normalized = normalizeTickerInput(ticker);
+  if (!normalized) return { row: null };
 
-    return {
-      market_cap: safeFloat(row.market_cap),
-      industry: row.sic_description || row.industry || null,
-    };
-  } catch {
-    return null;
+  try {
+    const response = await fetch(
+      `${getApiEndpoint(`/api/polygon/v3/reference/tickers/${normalized}`)}`,
+      { signal },
+    );
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      const message = String(data?.error || data?.body || "").trim();
+      if (
+        response.status === 500 &&
+        message.includes("POLYGON_API_KEY")
+      ) {
+        return {
+          row: null,
+          error:
+            "Stock validation is unavailable. Add POLYGON_API_KEY to your server .env and restart the server.",
+        };
+      }
+      if (response.status === 404) return { row: null };
+      return {
+        row: null,
+        error: message || `Polygon API error (HTTP ${response.status})`,
+      };
+    }
+
+    const row = data?.results;
+    if (!row?.ticker) return { row: null };
+    return { row };
+  } catch (err: any) {
+    if (signal?.aborted) return { row: null, error: "Validation cancelled." };
+    return { row: null, error: err?.message || "Failed to reach Polygon API." };
   }
+};
+
+export const fetchTickerReference = async (ticker: string, signal?: AbortSignal): Promise<TickerReference | null> => {
+  const { row } = await fetchTickerReferenceRow(ticker, signal);
+  if (!row || !isIndividualCompanyResult(row)) return null;
+
+  return {
+    market_cap: safeFloat(row.market_cap),
+    industry: row.sic_description || row.industry || null,
+  };
 };
 
 export const validateTicker = async (ticker: string): Promise<{ valid: boolean; reason?: string }> => {
   try {
     const normalized = normalizeTickerInput(ticker);
-    const ref = await fetchTickerReference(normalized);
-    if (ref) return { valid: true };
+    if (!normalized) {
+      return { valid: false, reason: "Please enter a ticker symbol." };
+    }
 
     const looksInternational =
       normalized.includes(":") ||
@@ -183,7 +222,23 @@ export const validateTicker = async (ticker: string): Promise<{ valid: boolean; 
 
     if (looksInternational) return { valid: true };
 
-    return { valid: false, reason: "Ticker not found (or not a common stock operating company)." };
+    const { row, error } = await fetchTickerReferenceRow(normalized);
+    if (error) return { valid: false, reason: error };
+    if (!row) {
+      return {
+        valid: false,
+        reason: "Ticker not found. Check the symbol and try again.",
+      };
+    }
+    if (!isIndividualCompanyResult(row)) {
+      return {
+        valid: false,
+        reason:
+          "Only individual company stocks can be added (not ETFs, funds, or other instruments).",
+      };
+    }
+
+    return { valid: true };
   } catch (err: any) {
     return { valid: false, reason: `Validation failed: ${err.message}` };
   }

@@ -81,6 +81,7 @@ type Props = {
   onCancelEditSubcategory: (ticker: string) => void;
   onDraftSubcategoryChange: (ticker: string, value: string) => void;
   onSaveSubcategory: (ticker: string, value: string) => void;
+  showSubcategories?: boolean;
 };
 
 const iconButtonBaseStyle = {
@@ -150,6 +151,7 @@ const WatchlistSection = ({
   onCancelEditSubcategory,
   onDraftSubcategoryChange,
   onSaveSubcategory,
+  showSubcategories = true,
 }: Props) => {
   const [isWatchlistDescriptionExpanded, setIsWatchlistDescriptionExpanded] =
     useState(false);
@@ -705,6 +707,7 @@ const WatchlistSection = ({
             onCancelEditSubcategory={onCancelEditSubcategory}
             onDraftSubcategoryChange={onDraftSubcategoryChange}
             onSaveSubcategory={onSaveSubcategory}
+            showSubcategories={showSubcategories}
           />
 
           <ManualCustomStocksTable
@@ -746,6 +749,7 @@ const WatchlistSection = ({
             onSaveSubcategory={(_wl, ticker, value) =>
               onSaveSubcategory(ticker, value)
             }
+            showSubcategories={showSubcategories}
           />
         </>
       )}

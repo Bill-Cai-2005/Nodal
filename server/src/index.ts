@@ -1,5 +1,14 @@
 import dotenv from "dotenv";
-dotenv.config();
+import path from "path";
+import { fileURLToPath } from "url";
+
+const serverDir = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+);
+// Load root .env first, then server/.env so server-specific values can override.
+dotenv.config({ path: path.resolve(serverDir, "../.env") });
+dotenv.config({ path: path.resolve(serverDir, ".env") });
 
 import express from "express";
 import cors from "cors";
@@ -9,8 +18,8 @@ import blogByIdRouter from "./routes/blogById.js";
 import uploadImageRouter from "./routes/uploadImage.js";
 import watchlistCacheRouter from "./routes/watchlistCache.js";
 import polygonProxyRouter from "./routes/polygonProxy.js";
-import adminRouter from "./routes/admin.js";
 import companySummaryRouter from "./routes/companySummary.js";
+import adminRouter from "./routes/admin.js";
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
@@ -82,8 +91,8 @@ app.use("/api/blogs", blogByIdRouter);
 app.use("/api/upload-image", uploadImageRouter);
 app.use("/api/watchlist-cache", watchlistCacheRouter);
 app.use("/api/polygon", polygonProxyRouter);
-app.use("/api/admin", adminRouter);
 app.use("/api/company-summary", companySummaryRouter);
+app.use("/api/admin", adminRouter);
 
 // Health check
 app.get("/health", (_req: express.Request, res: express.Response) => {

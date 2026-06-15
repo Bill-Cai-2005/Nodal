@@ -9,6 +9,7 @@ import {
 import { loadUniversalTableFromIndexedDb, replaceUniversalTableInIndexedDb } from "../../utils/marketCapIndexedDb";
 import { runWithConcurrency } from "../../utils/concurrency";
 import { fetchCompanySummary } from "../../utils/companySummaryApi";
+import { UNIVERSAL_WATCHLIST_DESCRIPTION } from "../../utils/watchlistCacheApi";
 import UniversalWatchlistControls from "./UniversalWatchlistControls";
 import UniversalWatchlistTable from "./UniversalWatchlistTable";
 
@@ -361,6 +362,19 @@ const UniversalWatchlist = () => {
 
   return (
     <div style={{ width: "100%" }}>
+      <p
+        style={{
+          maxWidth: "720px",
+          margin: "0 auto 1.5rem",
+          textAlign: "center",
+          color: "#4b5563",
+          fontSize: "1rem",
+          lineHeight: 1.6,
+        }}
+      >
+        {UNIVERSAL_WATCHLIST_DESCRIPTION}
+      </p>
+
       <UniversalWatchlistControls
         loading={loading}
         progress={progress}

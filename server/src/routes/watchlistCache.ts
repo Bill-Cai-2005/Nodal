@@ -5,11 +5,27 @@ import CustomWatchlist from "../models/CustomWatchlist.js";
 const router = express.Router();
 const UNCATEGORIZED = "Uncategorized";
 const AI_BUILDOUT_NAME = "AI Buildout";
+const AI_APPLICATIONS_NAME = "AI Applications";
 const DEFAULT_RESOURCE_TAB = "ai-buildout";
 const AREAS_OF_INTEREST_TAB = "watchlist";
 
-function isAiBuildoutWatchlistName(name: string) {
-  return String(name || "").trim().toLowerCase() === AI_BUILDOUT_NAME.toLowerCase();
+const TAB_META_WATCHLIST_NAME = "__tab_description__";
+
+const CONSOLIDATED_TABS: Record<string, string> = {
+  "ai-buildout": AI_BUILDOUT_NAME,
+  "ai-applications": AI_APPLICATIONS_NAME,
+};
+
+function getConsolidatedWatchlistName(resourceTab: string): string | null {
+  return CONSOLIDATED_TABS[resourceTab] ?? null;
+}
+
+function getResourceTabForWatchlistName(name: string): string | null {
+  const normalized = String(name || "").trim().toLowerCase();
+  for (const [tab, watchlistName] of Object.entries(CONSOLIDATED_TABS)) {
+    if (watchlistName.toLowerCase() === normalized) return tab;
+  }
+  return null;
 }
 
 function normalizeResourceTab(value: unknown): string {
@@ -36,6 +52,10 @@ async function migrateLegacyResourceTabs() {
   await CustomWatchlist.updateMany(
     { name: AI_BUILDOUT_NAME, resourceTab: AREAS_OF_INTEREST_TAB },
     { $set: { resourceTab: DEFAULT_RESOURCE_TAB } },
+  );
+  await CustomWatchlist.updateMany(
+    { name: AI_APPLICATIONS_NAME, resourceTab: AREAS_OF_INTEREST_TAB },
+    { $set: { resourceTab: "ai-applications" } },
   );
 }
 
@@ -117,86 +137,94 @@ function mergeKeyTags(target: string[], source: string[]) {
 }
 
 async function ensureWatchlistTabIsolation() {
-  const misplaced = await CustomWatchlist.findOne({
-    name: AI_BUILDOUT_NAME,
-    resourceTab: AREAS_OF_INTEREST_TAB,
-  });
-  if (!misplaced) return;
+  for (const [resourceTab, watchlistName] of Object.entries(CONSOLIDATED_TABS)) {
+    const misplaced = await CustomWatchlist.findOne({
+      name: watchlistName,
+      resourceTab: AREAS_OF_INTEREST_TAB,
+    });
+    if (!misplaced) continue;
 
-  const canonical = await CustomWatchlist.findOne({
-    name: AI_BUILDOUT_NAME,
-    resourceTab: DEFAULT_RESOURCE_TAB,
-  });
+    const canonical = await CustomWatchlist.findOne({
+      name: watchlistName,
+      resourceTab,
+    });
 
-  if (!canonical) {
-    await CustomWatchlist.findOneAndUpdate(
-      { name: AI_BUILDOUT_NAME, resourceTab: AREAS_OF_INTEREST_TAB },
-      { resourceTab: DEFAULT_RESOURCE_TAB },
+    if (!canonical) {
+      await CustomWatchlist.findOneAndUpdate(
+        { name: watchlistName, resourceTab: AREAS_OF_INTEREST_TAB },
+        { resourceTab },
+      );
+      continue;
+    }
+
+    const mergedTickers = Array.from(
+      new Set([
+        ...(canonical.tickers || []),
+        ...(misplaced.tickers || []),
+      ].map((t) => String(t).trim().toUpperCase()).filter(Boolean)),
     );
-    return;
-  }
+    const mergedDescriptions = {
+      ...(misplaced.stockDescriptions || {}),
+      ...(canonical.stockDescriptions || {}),
+    };
+    const mergedTags = normalizeStockTags(canonical.stockTags || {});
+    mergeTagsInto(mergedTags, normalizeStockTags(misplaced.stockTags || {}));
+    const mergedTagDescriptions = normalizeTagDescriptions(
+      canonical.tagDescriptions || {},
+    );
+    mergeTagDescriptions(
+      mergedTagDescriptions,
+      normalizeTagDescriptions(misplaced.tagDescriptions || {}),
+    );
+    const mergedKeyTags = normalizeKeyTags(canonical.keyTags || []);
+    mergeKeyTags(mergedKeyTags, normalizeKeyTags(misplaced.keyTags || []));
+    const mergedDataByTicker: Record<string, any> = {};
+    for (const row of [...(misplaced.data || []), ...(canonical.data || [])]) {
+      const ticker = String(row?.Ticker || "").trim().toUpperCase();
+      if (ticker) mergedDataByTicker[ticker] = row;
+    }
 
-  const mergedTickers = Array.from(
-    new Set([
-      ...(canonical.tickers || []),
-      ...(misplaced.tickers || []),
-    ].map((t) => String(t).trim().toUpperCase()).filter(Boolean)),
-  );
-  const mergedDescriptions = {
-    ...(misplaced.stockDescriptions || {}),
-    ...(canonical.stockDescriptions || {}),
-  };
-  const mergedTags = normalizeStockTags(canonical.stockTags || {});
-  mergeTagsInto(mergedTags, normalizeStockTags(misplaced.stockTags || {}));
-  const mergedTagDescriptions = normalizeTagDescriptions(
-    canonical.tagDescriptions || {},
-  );
-  mergeTagDescriptions(
-    mergedTagDescriptions,
-    normalizeTagDescriptions(misplaced.tagDescriptions || {}),
-  );
-  const mergedKeyTags = normalizeKeyTags(canonical.keyTags || []);
-  mergeKeyTags(mergedKeyTags, normalizeKeyTags(misplaced.keyTags || []));
-  const mergedDataByTicker: Record<string, any> = {};
-  for (const row of [...(misplaced.data || []), ...(canonical.data || [])]) {
-    const ticker = String(row?.Ticker || "").trim().toUpperCase();
-    if (ticker) mergedDataByTicker[ticker] = row;
+    await CustomWatchlist.findOneAndUpdate(
+      { name: watchlistName, resourceTab },
+      {
+        tickers: mergedTickers,
+        stockDescriptions: mergedDescriptions,
+        stockTags: mergedTags,
+        tagDescriptions: mergedTagDescriptions,
+        keyTags: mergedKeyTags,
+        data: Object.values(mergedDataByTicker),
+        lastRefreshed:
+          canonical.lastRefreshed && misplaced.lastRefreshed
+            ? canonical.lastRefreshed > misplaced.lastRefreshed
+              ? canonical.lastRefreshed
+              : misplaced.lastRefreshed
+            : canonical.lastRefreshed || misplaced.lastRefreshed || null,
+      },
+    );
+    await CustomWatchlist.deleteOne({
+      name: watchlistName,
+      resourceTab: AREAS_OF_INTEREST_TAB,
+    });
   }
-
-  await CustomWatchlist.findOneAndUpdate(
-    { name: AI_BUILDOUT_NAME, resourceTab: DEFAULT_RESOURCE_TAB },
-    {
-      tickers: mergedTickers,
-      stockDescriptions: mergedDescriptions,
-      stockTags: mergedTags,
-      tagDescriptions: mergedTagDescriptions,
-      keyTags: mergedKeyTags,
-      data: Object.values(mergedDataByTicker),
-      lastRefreshed:
-        canonical.lastRefreshed && misplaced.lastRefreshed
-          ? canonical.lastRefreshed > misplaced.lastRefreshed
-            ? canonical.lastRefreshed
-            : misplaced.lastRefreshed
-          : canonical.lastRefreshed || misplaced.lastRefreshed || null,
-    },
-  );
-  await CustomWatchlist.deleteOne({
-    name: AI_BUILDOUT_NAME,
-    resourceTab: AREAS_OF_INTEREST_TAB,
-  });
 }
 
-async function ensureAiBuildoutConsolidated() {
-  const docs = await CustomWatchlist.find({ resourceTab: DEFAULT_RESOURCE_TAB }).sort({
+async function ensureConsolidatedWatchlist(
+  resourceTab: string,
+  canonicalName: string,
+) {
+  const docs = await CustomWatchlist.find({
+    resourceTab,
+    name: { $ne: TAB_META_WATCHLIST_NAME },
+  }).sort({
     order: 1,
     name: 1,
   });
   if (docs.length === 0) return;
 
   const primary =
-    docs.find((d) => d.name === AI_BUILDOUT_NAME) || docs[0];
+    docs.find((d) => d.name === canonicalName) || docs[0];
 
-  if (docs.length === 1 && primary.name === AI_BUILDOUT_NAME) {
+  if (docs.length === 1 && primary.name === canonicalName) {
     return;
   }
 
@@ -246,16 +274,16 @@ async function ensureAiBuildoutConsolidated() {
   const mergedData = Object.values(mergedDataByTicker);
   const namesToDelete = docs
     .map((d) => d.name)
-    .filter((name) => name !== AI_BUILDOUT_NAME);
+    .filter((name) => name !== canonicalName);
 
   await CustomWatchlist.findOneAndUpdate(
-    { name: AI_BUILDOUT_NAME },
+    { name: canonicalName },
     {
-      name: AI_BUILDOUT_NAME,
+      name: canonicalName,
       description: mergedDescription,
       order: 0,
       category: UNCATEGORIZED,
-      resourceTab: DEFAULT_RESOURCE_TAB,
+      resourceTab,
       tickers: Array.from(mergedTickers),
       stockDescriptions: mergedDescriptions,
       stockSubcategories: {},
@@ -280,14 +308,21 @@ router.get("/custom-watchlists", async (req: Request, res: Response) => {
     await migrateLegacyResourceTabs();
     await ensureWatchlistTabIsolation();
     const resourceTab = normalizeResourceTab(req.query.resourceTab);
-    if (resourceTab === DEFAULT_RESOURCE_TAB) {
-      await ensureAiBuildoutConsolidated();
+    const consolidatedName = getConsolidatedWatchlistName(resourceTab);
+    if (consolidatedName) {
+      await ensureConsolidatedWatchlist(resourceTab, consolidatedName);
     }
+    const consolidatedNames = Object.values(CONSOLIDATED_TABS);
     const watchlistFilter =
       resourceTab === AREAS_OF_INTEREST_TAB
-        ? { resourceTab, name: { $ne: AI_BUILDOUT_NAME } }
-        : resourceTab === DEFAULT_RESOURCE_TAB
-          ? { $or: [{ resourceTab: DEFAULT_RESOURCE_TAB }, { name: AI_BUILDOUT_NAME }] }
+        ? {
+            resourceTab,
+            name: { $nin: [...consolidatedNames, TAB_META_WATCHLIST_NAME] },
+          }
+        : consolidatedName
+          ? {
+              $or: [{ resourceTab }, { name: consolidatedName }],
+            }
           : { resourceTab };
     const docs = await CustomWatchlist.find(watchlistFilter).sort({ order: 1, name: 1 });
     return res.json({
@@ -324,15 +359,11 @@ router.put("/custom-watchlists/:name", async (req: Request, res: Response) => {
     if (!name) {
       return res.status(400).json({ error: "Watchlist name is required" });
     }
-    const resourceTab = isAiBuildoutWatchlistName(name)
-      ? DEFAULT_RESOURCE_TAB
-      : normalizeResourceTab(resource_tab);
-    if (
-      isAiBuildoutWatchlistName(name) &&
-      resourceTab === AREAS_OF_INTEREST_TAB
-    ) {
+    const canonicalTab = getResourceTabForWatchlistName(name);
+    const resourceTab = canonicalTab ?? normalizeResourceTab(resource_tab);
+    if (canonicalTab && resourceTab === AREAS_OF_INTEREST_TAB) {
       return res.status(400).json({
-        error: `"${AI_BUILDOUT_NAME}" belongs on the AI Buildout tab, not Areas of Interest.`,
+        error: `"${name}" belongs on the ${name} tab, not Areas of Interest.`,
       });
     }
     if (!Array.isArray(tickers)) {

@@ -112,6 +112,8 @@ const TagFilterBar = ({
           ...getTagPillStyle(isKey, active),
           fontFamily,
           cursor: "pointer",
+          flexShrink: 0,
+          whiteSpace: "nowrap",
         }}
       >
         {isKey ? `★ ${tag}` : tag}
@@ -320,9 +322,11 @@ const TagFilterBar = ({
             <div
               style={{
                 display: "flex",
-                flexWrap: "wrap",
+                flexWrap: "nowrap",
                 gap: "0.5rem",
                 alignItems: "center",
+                overflowX: "auto",
+                paddingBottom: "0.25rem",
               }}
             >
               {pillTags.map((tag) => renderTagPill(tag))}

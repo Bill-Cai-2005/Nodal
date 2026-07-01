@@ -120,6 +120,20 @@ const AiBuildoutTable = ({
     "Volume",
   ];
 
+  const tagScrollContainerStyle = {
+    display: "flex",
+    gap: "0.35rem",
+    flexWrap: "nowrap" as const,
+    overflowX: "auto" as const,
+    maxWidth: "100%",
+    minHeight: "24px",
+  };
+
+  const tagPillNoShrinkStyle = {
+    flexShrink: 0,
+    whiteSpace: "nowrap" as const,
+  };
+
   const renderTags = (ticker: string, liveTags: string[]) => {
     const tagKey = ticker.trim().toUpperCase();
     const isEditingTags = editingTagsByTicker[tagKey] ?? false;
@@ -129,7 +143,13 @@ const AiBuildoutTable = ({
     const renderTagPill = (tag: string) => {
       const isKey = isKeyTag(keyTags, tag);
       return (
-        <span key={`${ticker}-${tag}`} style={getTagPillStyle(isKey, false, true)}>
+        <span
+          key={`${ticker}-${tag}`}
+          style={{
+            ...getTagPillStyle(isKey, false, true),
+            ...tagPillNoShrinkStyle,
+          }}
+        >
           {isKey ? `★ ${tag}` : tag}
         </span>
       );
@@ -137,7 +157,7 @@ const AiBuildoutTable = ({
 
     if (!isAdmin) {
       return (
-        <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
+        <div style={tagScrollContainerStyle}>
           {displayTags.length > 0 ? (
             displayTags.map((tag) => renderTagPill(tag))
           ) : (
@@ -155,11 +175,8 @@ const AiBuildoutTable = ({
             onStartEditTags?.(ticker);
           }}
           style={{
-            display: "flex",
-            gap: "0.35rem",
-            flexWrap: "wrap",
+            ...tagScrollContainerStyle,
             cursor: "text",
-            minHeight: "24px",
           }}
           title="Click to edit tags"
         >
@@ -306,7 +323,11 @@ const AiBuildoutTable = ({
                     ) : null}
                   </td>
                   <td
-                    style={{ padding: "0.75rem", minWidth: "180px" }}
+                    style={{
+                      padding: "0.75rem",
+                      maxWidth: "280px",
+                      overflow: "hidden",
+                    }}
                     onClick={(e) => e.stopPropagation()}
                   >
                     {renderTags(ticker, liveTags)}

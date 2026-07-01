@@ -26,6 +26,7 @@ import {
 } from "../../utils/tagUtils";
 import TagFilterBar from "./TagFilterBar";
 import AiBuildoutTable from "./AiBuildoutTable";
+import EditableTabDescription from "./EditableTabDescription";
 import RefreshWatchlistsButton from "./RefreshWatchlistsButton";
 import {
   primaryActionButtonStyle,
@@ -47,9 +48,17 @@ const normalizeStockTagsByTicker = (
 
 type Props = {
   isAdmin?: boolean;
+  resourceTab?: string;
+  watchlistName?: string;
+  defaultDescription?: string;
 };
 
-const AiBuildoutWatchlist = ({ isAdmin = false }: Props) => {
+const AiBuildoutWatchlist = ({
+  isAdmin = false,
+  resourceTab = RESOURCE_TAB_AI_BUILDOUT,
+  watchlistName = AI_BUILDOUT_WATCHLIST_NAME,
+  defaultDescription = AI_BUILDOUT_DESCRIPTION,
+}: Props) => {
   const [tickers, setTickers] = useState<string[]>([]);
   const [watchlistData, setWatchlistData] = useState<StockData[]>([]);
   const [stockDescriptions, setStockDescriptions] = useState<
@@ -104,7 +113,14 @@ const AiBuildoutWatchlist = ({ isAdmin = false }: Props) => {
   const [draftTagsByTicker, setDraftTagsByTicker] = useState<
     Record<string, string>
   >({});
+  const [tabDescription, setTabDescription] = useState(defaultDescription);
+  const [isEditingTabDescription, setIsEditingTabDescription] = useState(false);
+  const [draftTabDescription, setDraftTabDescription] = useState("");
+  const tabDescriptionRef = useRef(tabDescription);
 
+  useEffect(() => {
+    tabDescriptionRef.current = tabDescription;
+  }, [tabDescription]);
   useEffect(() => {
     stockDescriptionsRef.current = stockDescriptions;
   }, [stockDescriptions]);
@@ -129,18 +145,19 @@ const AiBuildoutWatchlist = ({ isAdmin = false }: Props) => {
       stockTags?: Record<string, string[]>;
       tagDescriptions?: Record<string, string>;
       keyTags?: string[];
+      tabDescription?: string;
     },
   ) => {
     await saveCustomWatchlistToDb(
-      AI_BUILDOUT_WATCHLIST_NAME,
+      watchlistName,
       nextTickers,
       nextData,
       lastRefreshed,
       {
-        description: "",
+        description: overrides?.tabDescription ?? tabDescriptionRef.current,
         order: 0,
         category: "Uncategorized",
-        resourceTab: RESOURCE_TAB_AI_BUILDOUT,
+        resourceTab,
         stockDescriptions:
           overrides?.stockDescriptions ?? stockDescriptionsRef.current,
         stockTags: overrides?.stockTags ?? stockTagsRef.current,
@@ -154,13 +171,16 @@ const AiBuildoutWatchlist = ({ isAdmin = false }: Props) => {
   useEffect(() => {
     (async () => {
       try {
-        const resp = await loadCustomWatchlistsFromDb(RESOURCE_TAB_AI_BUILDOUT);
+        const resp = await loadCustomWatchlistsFromDb(resourceTab);
         const wl =
-          resp.watchlists?.find((w) => w.name === AI_BUILDOUT_WATCHLIST_NAME) ||
+          resp.watchlists?.find((w) => w.name === watchlistName) ||
           resp.watchlists?.[0];
         if (!wl) return;
 
         const loadedTags = normalizeStockTagsByTicker(wl.stock_tags || {});
+        const loadedTabDescription = wl.description?.trim()
+          ? wl.description
+          : defaultDescription;
 
         setTickers(wl.tickers || []);
         setWatchlistData((wl.data || []) as StockData[]);
@@ -168,15 +188,31 @@ const AiBuildoutWatchlist = ({ isAdmin = false }: Props) => {
         setStockTags(loadedTags);
         setTagDescriptions(wl.tag_descriptions || {});
         setKeyTags(wl.key_tags || []);
+        setTabDescription(loadedTabDescription);
         stockDescriptionsRef.current = wl.stock_descriptions || {};
         stockTagsRef.current = loadedTags;
         tagDescriptionsRef.current = wl.tag_descriptions || {};
         keyTagsRef.current = wl.key_tags || [];
+        tabDescriptionRef.current = loadedTabDescription;
       } catch (e) {
-        console.warn("Failed to load AI Buildout watchlist:", e);
+        console.warn(`Failed to load ${watchlistName} watchlist:`, e);
       }
     })();
-  }, []);
+  }, [resourceTab, watchlistName, defaultDescription]);
+
+  const handleSaveTabDescription = async () => {
+    const nextDescription = draftTabDescription.trim();
+    setTabDescription(nextDescription);
+    tabDescriptionRef.current = nextDescription;
+    setIsEditingTabDescription(false);
+    try {
+      await saveToDb(tickers, watchlistData, null, {
+        tabDescription: nextDescription,
+      });
+    } catch (e: any) {
+      showPopup(`Saved locally but failed to sync tab description: ${e.message}`);
+    }
+  };
 
   const manualRows = watchlistData.filter((row) => !tickers.includes(row.Ticker));
   const marketRows = watchlistData.filter((row) => tickers.includes(row.Ticker));
@@ -492,18 +528,19 @@ const AiBuildoutWatchlist = ({ isAdmin = false }: Props) => {
 
   return (
     <div style={{ width: "100%" }}>
-      <p
-        style={{
-          maxWidth: "720px",
-          margin: "0 auto 1.5rem",
-          textAlign: "center",
-          color: "#4b5563",
-          fontSize: "1rem",
-          lineHeight: 1.6,
+      <EditableTabDescription
+        description={tabDescription}
+        isAdmin={isAdmin}
+        isEditing={isEditingTabDescription}
+        draft={draftTabDescription}
+        onStartEdit={() => {
+          setDraftTabDescription(tabDescription);
+          setIsEditingTabDescription(true);
         }}
-      >
-        {AI_BUILDOUT_DESCRIPTION}
-      </p>
+        onDraftChange={setDraftTabDescription}
+        onSave={() => void handleSaveTabDescription()}
+        onCancel={() => setIsEditingTabDescription(false)}
+      />
 
       <div style={{ marginBottom: "1rem" }}>
         <div style={refreshWatchlistsToolbarStyle}>

@@ -9,8 +9,11 @@ import AiBuildoutWatchlist from "../components/NodalWatchlist/AiBuildoutWatchlis
 import { verifyToolPassword } from "../utils/adminApi";
 import {
   RESOURCE_TAB_AI_BUILDOUT,
+  RESOURCE_TAB_AI_APPLICATIONS,
   RESOURCE_TAB_WATCHLIST,
   RESOURCE_TAB_AREAS_OF_INTEREST_LABEL,
+  AI_APPLICATIONS_WATCHLIST_NAME,
+  AI_APPLICATIONS_DESCRIPTION,
 } from "../utils/watchlistCacheApi";
 
 const NodalWatchlist = () => {
@@ -147,12 +150,25 @@ const NodalWatchlist = () => {
           >
             AI Buildout
           </button>
+          <button
+            onClick={() => setActiveTab(RESOURCE_TAB_AI_APPLICATIONS)}
+            style={getTabStyle(RESOURCE_TAB_AI_APPLICATIONS)}
+          >
+            AI Applications
+          </button>
         </div>
 
         {activeTab === "universal" && isAdmin ? (
-          <UniversalWatchlist />
+          <UniversalWatchlist isAdmin={isAdmin} />
         ) : activeTab === RESOURCE_TAB_AI_BUILDOUT ? (
           <AiBuildoutWatchlist isAdmin={isAdmin} />
+        ) : activeTab === RESOURCE_TAB_AI_APPLICATIONS ? (
+          <AiBuildoutWatchlist
+            isAdmin={isAdmin}
+            resourceTab={RESOURCE_TAB_AI_APPLICATIONS}
+            watchlistName={AI_APPLICATIONS_WATCHLIST_NAME}
+            defaultDescription={AI_APPLICATIONS_DESCRIPTION}
+          />
         ) : (
           <CustomWatchlists
             key={activeTab}

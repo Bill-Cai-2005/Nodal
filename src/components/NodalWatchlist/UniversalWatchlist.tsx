@@ -9,11 +9,22 @@ import {
 import { loadUniversalTableFromIndexedDb, replaceUniversalTableInIndexedDb } from "../../utils/marketCapIndexedDb";
 import { runWithConcurrency } from "../../utils/concurrency";
 import { fetchCompanySummary } from "../../utils/companySummaryApi";
-import { UNIVERSAL_WATCHLIST_DESCRIPTION } from "../../utils/watchlistCacheApi";
+import {
+  loadCustomWatchlistsFromDb,
+  saveResourceTabDescription,
+  UNIVERSAL_WATCHLIST_DESCRIPTION,
+  RESOURCE_TAB_UNIVERSAL,
+  isResourceTabMetaWatchlistName,
+} from "../../utils/watchlistCacheApi";
 import UniversalWatchlistControls from "./UniversalWatchlistControls";
 import UniversalWatchlistTable from "./UniversalWatchlistTable";
+import EditableTabDescription from "./EditableTabDescription";
 
-const UniversalWatchlist = () => {
+type Props = {
+  isAdmin?: boolean;
+};
+
+const UniversalWatchlist = ({ isAdmin = false }: Props) => {
   const [tickers, setTickers] = useState<{ nyse: string[]; nasdaq: string[] }>({ nyse: [], nasdaq: [] });
   const [data, setData] = useState<StockData[]>([]);
   const [loading, setLoading] = useState(false);
@@ -31,6 +42,36 @@ const UniversalWatchlist = () => {
   const [summaryError, setSummaryError] = useState<string | null>(null);
   const [summaryCache, setSummaryCache] = useState<Record<string, string>>({});
   const abortRef = useRef<AbortController | null>(null);
+  const [tabDescription, setTabDescription] = useState(UNIVERSAL_WATCHLIST_DESCRIPTION);
+  const [isEditingTabDescription, setIsEditingTabDescription] = useState(false);
+  const [draftTabDescription, setDraftTabDescription] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const resp = await loadCustomWatchlistsFromDb(RESOURCE_TAB_UNIVERSAL);
+        const metaWatchlist = (resp.watchlists || []).find((w) =>
+          isResourceTabMetaWatchlistName(w.name),
+        );
+        if (metaWatchlist?.description?.trim()) {
+          setTabDescription(metaWatchlist.description);
+        }
+      } catch (e) {
+        console.warn("Failed to load universal tab description:", e);
+      }
+    })();
+  }, []);
+
+  const handleSaveTabDescription = async () => {
+    const nextDescription = draftTabDescription.trim();
+    setTabDescription(nextDescription);
+    setIsEditingTabDescription(false);
+    try {
+      await saveResourceTabDescription(RESOURCE_TAB_UNIVERSAL, nextDescription);
+    } catch (e: any) {
+      alert(`Failed to save tab description: ${e.message}`);
+    }
+  };
 
   useEffect(() => {
     if (!useCustomRange && sortColumn === "Custom Dates Change %") {
@@ -361,18 +402,19 @@ const UniversalWatchlist = () => {
 
   return (
     <div style={{ width: "100%" }}>
-      <p
-        style={{
-          maxWidth: "720px",
-          margin: "0 auto 1.5rem",
-          textAlign: "center",
-          color: "#4b5563",
-          fontSize: "1rem",
-          lineHeight: 1.6,
+      <EditableTabDescription
+        description={tabDescription}
+        isAdmin={isAdmin}
+        isEditing={isEditingTabDescription}
+        draft={draftTabDescription}
+        onStartEdit={() => {
+          setDraftTabDescription(tabDescription);
+          setIsEditingTabDescription(true);
         }}
-      >
-        {UNIVERSAL_WATCHLIST_DESCRIPTION}
-      </p>
+        onDraftChange={setDraftTabDescription}
+        onSave={() => void handleSaveTabDescription()}
+        onCancel={() => setIsEditingTabDescription(false)}
+      />
 
       <UniversalWatchlistControls
         loading={loading}

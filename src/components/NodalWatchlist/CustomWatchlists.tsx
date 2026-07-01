@@ -19,13 +19,18 @@ import {
   deleteCustomWatchlistFromDb,
   loadCustomWatchlistsFromDb,
   saveCustomWatchlistToDb,
-  AI_BUILDOUT_WATCHLIST_NAME,
+  saveResourceTabDescription,
+  getManagedThemeWatchlistLabel,
+  getManagedThemeWatchlistTab,
+  isManagedThemeWatchlistName,
+  isResourceTabMetaWatchlistName,
   RESOURCE_TAB_WATCHLIST,
   AREAS_OF_INTEREST_DESCRIPTION,
   type CustomWatchlistDbEntry,
 } from "../../utils/watchlistCacheApi";
 import { runWithConcurrency } from "../../utils/concurrency";
 import WatchlistSection from "./WatchlistSection";
+import EditableTabDescription from "./EditableTabDescription";
 import RefreshWatchlistsButton from "./RefreshWatchlistsButton";
 import {
   primaryActionButtonStyle,
@@ -128,6 +133,9 @@ const CustomWatchlists = ({
     string | null
   >(null);
   const [popupMessage, setPopupMessage] = useState<string | null>(null);
+  const [tabDescription, setTabDescription] = useState(AREAS_OF_INTEREST_DESCRIPTION);
+  const [isEditingTabDescription, setIsEditingTabDescription] = useState(false);
+  const [draftTabDescription, setDraftTabDescription] = useState("");
   const [watchlistNameDraftByName, setWatchlistNameDraftByName] = useState<
     Record<string, string>
   >({});
@@ -295,9 +303,18 @@ const CustomWatchlists = ({
 
       try {
         const resp = await loadCustomWatchlistsFromDb(resourceTab);
+        const metaWatchlist = (resp.watchlists || []).find((w) =>
+          isResourceTabMetaWatchlistName(w.name),
+        );
+        const loadedTabDescription = metaWatchlist?.description?.trim()
+          ? metaWatchlist.description
+          : AREAS_OF_INTEREST_DESCRIPTION;
+        setTabDescription(loadedTabDescription);
         applyLoadedState({
           effectiveWatchlists: (resp.watchlists || []).filter(
-            (w) => w.name !== AI_BUILDOUT_WATCHLIST_NAME,
+            (w) =>
+              !isManagedThemeWatchlistName(w.name) &&
+              !isResourceTabMetaWatchlistName(w.name),
           ),
         });
       } catch (e) {
@@ -370,10 +387,15 @@ const CustomWatchlists = ({
       showPopup("Please enter a watchlist name");
       return;
     }
-    if (name.toLowerCase() === AI_BUILDOUT_WATCHLIST_NAME.toLowerCase()) {
+    const managedTab = getManagedThemeWatchlistTab(name);
+    if (managedTab) {
       showPopup(
-        `"${AI_BUILDOUT_WATCHLIST_NAME}" is managed on the AI Buildout tab.`,
+        `"${name}" is managed on the ${getManagedThemeWatchlistLabel(name)} tab.`,
       );
+      return;
+    }
+    if (isResourceTabMetaWatchlistName(name)) {
+      showPopup("That watchlist name is reserved.");
       return;
     }
     if (watchlists[name]) {
@@ -532,13 +554,12 @@ const CustomWatchlists = ({
 
   const getRenderableWatchlistNames = () => {
     const orderedWatchlistNames = watchlistOrder.filter(
-      (name) =>
-        Boolean(watchlists[name]) && name !== AI_BUILDOUT_WATCHLIST_NAME,
+      (name) => Boolean(watchlists[name]) && !isManagedThemeWatchlistName(name),
     );
     const unorderedWatchlistNames = Object.keys(watchlists).filter(
       (name) =>
         !orderedWatchlistNames.includes(name) &&
-        name !== AI_BUILDOUT_WATCHLIST_NAME,
+        !isManagedThemeWatchlistName(name),
     );
     return [...orderedWatchlistNames, ...unorderedWatchlistNames];
   };
@@ -599,6 +620,18 @@ const CustomWatchlists = ({
     if (!isAdmin) return;
     setDraggedWatchlistName(null);
     setDragOverWatchlistName(null);
+  };
+
+  const handleSaveTabDescription = async () => {
+    if (!requireAdmin()) return;
+    const nextDescription = draftTabDescription.trim();
+    setTabDescription(nextDescription);
+    setIsEditingTabDescription(false);
+    try {
+      await saveResourceTabDescription(resourceTab, nextDescription);
+    } catch (e: any) {
+      showPopup(`Saved locally but failed to sync tab description: ${e.message}`);
+    }
   };
 
   const handleSaveWatchlistDescription = async (watchlistName: string) => {
@@ -1324,18 +1357,19 @@ const CustomWatchlists = ({
 
   return (
     <div style={{ width: "100%" }}>
-      <p
-        style={{
-          maxWidth: "720px",
-          margin: "0 auto 1.5rem",
-          textAlign: "center",
-          color: "#4b5563",
-          fontSize: "1rem",
-          lineHeight: 1.6,
+      <EditableTabDescription
+        description={tabDescription}
+        isAdmin={isAdmin}
+        isEditing={isEditingTabDescription}
+        draft={draftTabDescription}
+        onStartEdit={() => {
+          setDraftTabDescription(tabDescription);
+          setIsEditingTabDescription(true);
         }}
-      >
-        {AREAS_OF_INTEREST_DESCRIPTION}
-      </p>
+        onDraftChange={setDraftTabDescription}
+        onSave={() => void handleSaveTabDescription()}
+        onCancel={() => setIsEditingTabDescription(false)}
+      />
 
       <div style={{ marginBottom: "1rem" }}>
         <div style={refreshWatchlistsToolbarStyle}>

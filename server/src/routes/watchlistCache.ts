@@ -16,6 +16,12 @@ const CONSOLIDATED_TABS: Record<string, string> = {
   "ai-applications": AI_APPLICATIONS_NAME,
 };
 
+const CONSOLIDATED_TAB_DESCRIPTIONS: Record<string, string> = {
+  "ai-buildout": "The central theme of the market.",
+  "ai-applications":
+    "Companies building and deploying AI-powered applications.",
+};
+
 function getConsolidatedWatchlistName(resourceTab: string): string | null {
   return CONSOLIDATED_TABS[resourceTab] ?? null;
 }
@@ -208,6 +214,37 @@ async function ensureWatchlistTabIsolation() {
   }
 }
 
+async function ensureConsolidatedWatchlistRecord(
+  resourceTab: string,
+  canonicalName: string,
+) {
+  const existing = await CustomWatchlist.findOne({
+    name: canonicalName,
+    resourceTab,
+  });
+  if (existing) return;
+
+  await CustomWatchlist.findOneAndUpdate(
+    { name: canonicalName },
+    {
+      name: canonicalName,
+      description: CONSOLIDATED_TAB_DESCRIPTIONS[resourceTab] || "",
+      order: 0,
+      category: UNCATEGORIZED,
+      resourceTab,
+      tickers: [],
+      stockDescriptions: {},
+      stockSubcategories: {},
+      stockTags: {},
+      tagDescriptions: {},
+      keyTags: [],
+      data: [],
+      lastRefreshed: null,
+    },
+    { upsert: true, new: true },
+  );
+}
+
 async function ensureConsolidatedWatchlist(
   resourceTab: string,
   canonicalName: string,
@@ -310,6 +347,7 @@ router.get("/custom-watchlists", async (req: Request, res: Response) => {
     const resourceTab = normalizeResourceTab(req.query.resourceTab);
     const consolidatedName = getConsolidatedWatchlistName(resourceTab);
     if (consolidatedName) {
+      await ensureConsolidatedWatchlistRecord(resourceTab, consolidatedName);
       await ensureConsolidatedWatchlist(resourceTab, consolidatedName);
     }
     const consolidatedNames = Object.values(CONSOLIDATED_TABS);

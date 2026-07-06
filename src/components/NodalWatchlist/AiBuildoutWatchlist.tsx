@@ -169,13 +169,29 @@ const AiBuildoutWatchlist = ({
   };
 
   useEffect(() => {
+    const applyEmptyWatchlist = () => {
+      setTickers([]);
+      setWatchlistData([]);
+      setStockDescriptions({});
+      setStockTags({});
+      setTagDescriptions({});
+      setKeyTags([]);
+      setTabDescription(defaultDescription);
+      stockDescriptionsRef.current = {};
+      stockTagsRef.current = {};
+      tagDescriptionsRef.current = {};
+      keyTagsRef.current = [];
+      tabDescriptionRef.current = defaultDescription;
+    };
+
     (async () => {
       try {
         const resp = await loadCustomWatchlistsFromDb(resourceTab);
-        const wl =
-          resp.watchlists?.find((w) => w.name === watchlistName) ||
-          resp.watchlists?.[0];
-        if (!wl) return;
+        const wl = resp.watchlists?.find((w) => w.name === watchlistName);
+        if (!wl) {
+          applyEmptyWatchlist();
+          return;
+        }
 
         const loadedTags = normalizeStockTagsByTicker(wl.stock_tags || {});
         const loadedTabDescription = wl.description?.trim()
@@ -196,6 +212,7 @@ const AiBuildoutWatchlist = ({
         tabDescriptionRef.current = loadedTabDescription;
       } catch (e) {
         console.warn(`Failed to load ${watchlistName} watchlist:`, e);
+        applyEmptyWatchlist();
       }
     })();
   }, [resourceTab, watchlistName, defaultDescription]);

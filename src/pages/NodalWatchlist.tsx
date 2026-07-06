@@ -161,9 +161,13 @@ const NodalWatchlist = () => {
         {activeTab === "universal" && isAdmin ? (
           <UniversalWatchlist isAdmin={isAdmin} />
         ) : activeTab === RESOURCE_TAB_AI_BUILDOUT ? (
-          <AiBuildoutWatchlist isAdmin={isAdmin} />
+          <AiBuildoutWatchlist
+            key={RESOURCE_TAB_AI_BUILDOUT}
+            isAdmin={isAdmin}
+          />
         ) : activeTab === RESOURCE_TAB_AI_APPLICATIONS ? (
           <AiBuildoutWatchlist
+            key={RESOURCE_TAB_AI_APPLICATIONS}
             isAdmin={isAdmin}
             resourceTab={RESOURCE_TAB_AI_APPLICATIONS}
             watchlistName={AI_APPLICATIONS_WATCHLIST_NAME}

@@ -2,8 +2,6 @@ import {
   useEffect,
   useRef,
   useState,
-  type Dispatch,
-  type SetStateAction,
   type CSSProperties,
   type DragEvent,
 } from "react";
@@ -13,37 +11,40 @@ import {
   type StockData,
 } from "../../utils/polygonApi";
 import {
-  loadWatchlists,
-  saveWatchlists,
-  type WatchlistCache,
-  loadWatchlistDescriptionsByName,
-  saveWatchlistDescriptionsByName,
-  loadStockDescriptionsByWatchlist,
-  saveStockDescriptionsByWatchlist,
-  loadStockSubcategoriesByWatchlist,
-  saveStockSubcategoriesByWatchlist,
-} from "../../utils/watchlistCache";
-import {
   normalizeTickerInputLocal,
   parseNumberInput,
-  removeKeys,
   renameKey,
 } from "../../utils/watchlistUtils";
 import {
-  deleteCustomWatchlistCategoryFromDb,
   deleteCustomWatchlistFromDb,
-  loadCustomWatchlistCategoriesFromDb,
   loadCustomWatchlistsFromDb,
-  saveCustomWatchlistCategoryToDb,
   saveCustomWatchlistToDb,
+  saveResourceTabDescription,
+  getManagedThemeWatchlistLabel,
+  getManagedThemeWatchlistTab,
+  isManagedThemeWatchlistName,
+  isResourceTabMetaWatchlistName,
+  findResourceTabMetaWatchlist,
+  RESOURCE_TAB_WATCHLIST,
+  AREAS_OF_INTEREST_DESCRIPTION,
+  type CustomWatchlistDbEntry,
 } from "../../utils/watchlistCacheApi";
 import { runWithConcurrency } from "../../utils/concurrency";
-import CategorySection from "./CategorySection";
 import WatchlistSection from "./WatchlistSection";
+import EditableTabDescription from "./EditableTabDescription";
+import RefreshWatchlistsButton from "./RefreshWatchlistsButton";
+import {
+  primaryActionButtonStyle,
+  refreshWatchlistsToolbarStyle,
+} from "./watchlistButtonStyles";
 
 const UNCATEGORIZED = "Uncategorized";
+
+type WatchlistsMap = Record<string, string[]>;
+
 type Props = {
   isAdmin?: boolean;
+  resourceTab?: string;
 };
 
 const iconButtonBaseStyle: CSSProperties = {
@@ -71,49 +72,28 @@ const cancelButtonStyle: CSSProperties = {
   backgroundColor: "#6b7280",
 };
 
-const CustomWatchlists = ({ isAdmin = false }: Props) => {
-  const [watchlists, setWatchlists] = useState<WatchlistCache>({});
+const CustomWatchlists = ({
+  isAdmin = false,
+  resourceTab = RESOURCE_TAB_WATCHLIST,
+}: Props) => {
+  const [watchlists, setWatchlists] = useState<WatchlistsMap>({});
   const [watchlistOrder, setWatchlistOrder] = useState<string[]>([]);
   const [watchlistDescriptionByName, setWatchlistDescriptionByName] = useState<
     Record<string, string>
   >({});
-  const [watchlistCategoryByName, setWatchlistCategoryByName] = useState<
-    Record<string, string>
-  >({});
-  const [categoryOrder, setCategoryOrder] = useState<string[]>([]);
-  const [expandedByCategory, setExpandedByCategory] = useState<
-    Record<string, boolean>
-  >({});
   const [stockDescriptionsByWatchlist, setStockDescriptionsByWatchlist] =
-    useState<Record<string, Record<string, string>>>({});
-  const [stockSubcategoriesByWatchlist, setStockSubcategoriesByWatchlist] =
     useState<Record<string, Record<string, string>>>({});
 
   // Avoid stale-closure overwrites during async refresh/save flows.
-  const watchlistDescriptionByNameRef = useRef<Record<string, string>>({});
   const stockDescriptionsByWatchlistRef = useRef<
     Record<string, Record<string, string>>
   >({});
-  const stockSubcategoriesByWatchlistRef = useRef<
-    Record<string, Record<string, string>>
-  >({});
-  useEffect(() => {
-    watchlistDescriptionByNameRef.current = watchlistDescriptionByName;
-  }, [watchlistDescriptionByName]);
   useEffect(() => {
     stockDescriptionsByWatchlistRef.current = stockDescriptionsByWatchlist;
   }, [stockDescriptionsByWatchlist]);
-  useEffect(() => {
-    stockSubcategoriesByWatchlistRef.current = stockSubcategoriesByWatchlist;
-  }, [stockSubcategoriesByWatchlist]);
-  const [newCategoryName, setNewCategoryName] = useState("");
-  const [showCreateCategoryControls, setShowCreateCategoryControls] =
+  const [newWatchlistName, setNewWatchlistName] = useState("");
+  const [showCreateWatchlistControls, setShowCreateWatchlistControls] =
     useState(false);
-  const [newWatchlistNameByCategory, setNewWatchlistNameByCategory] = useState<
-    Record<string, string>
-  >({});
-  const [showCreateWatchlistByCategory, setShowCreateWatchlistByCategory] =
-    useState<Record<string, boolean>>({});
   const [newTickerByWatchlist, setNewTickerByWatchlist] = useState<
     Record<string, string>
   >({});
@@ -153,19 +133,10 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
   const [dragOverWatchlistName, setDragOverWatchlistName] = useState<
     string | null
   >(null);
-  const [draggedCategoryName, setDraggedCategoryName] = useState<string | null>(
-    null,
-  );
-  const [dragOverCategoryName, setDragOverCategoryName] = useState<
-    string | null
-  >(null);
   const [popupMessage, setPopupMessage] = useState<string | null>(null);
-  const [categoryRenameByName, setCategoryRenameByName] = useState<
-    Record<string, string>
-  >({});
-  const [editingCategoryByName, setEditingCategoryByName] = useState<
-    Record<string, boolean>
-  >({});
+  const [tabDescription, setTabDescription] = useState(AREAS_OF_INTEREST_DESCRIPTION);
+  const [isEditingTabDescription, setIsEditingTabDescription] = useState(false);
+  const [draftTabDescription, setDraftTabDescription] = useState("");
   const [watchlistNameDraftByName, setWatchlistNameDraftByName] = useState<
     Record<string, string>
   >({});
@@ -188,52 +159,12 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
     stockDescriptionDraftByWatchlist,
     setStockDescriptionDraftByWatchlist,
   ] = useState<Record<string, Record<string, string>>>({});
-  const [
-    editingStockSubcategoryByWatchlist,
-    setEditingStockSubcategoryByWatchlist,
-  ] = useState<Record<string, Record<string, boolean>>>({});
-  const [
-    stockSubcategoryDraftByWatchlist,
-    setStockSubcategoryDraftByWatchlist,
-  ] = useState<Record<string, Record<string, string>>>({});
 
   const showPopup = (message: string) => setPopupMessage(message);
   const requireAdmin = (message = "Admin password required.") => {
     if (isAdmin) return true;
     showPopup(message);
     return false;
-  };
-
-  // (Removed) international split: we now split by "manual" vs "watchlist" rows.
-
-  const setBoolByWatchlistTicker = (
-    setter: Dispatch<SetStateAction<Record<string, Record<string, boolean>>>>,
-    watchlistName: string,
-    ticker: string,
-    value: boolean,
-  ) => {
-    setter((prev) => ({
-      ...prev,
-      [watchlistName]: {
-        ...(prev[watchlistName] || {}),
-        [ticker]: value,
-      },
-    }));
-  };
-
-  const setStringByWatchlistTicker = (
-    setter: Dispatch<SetStateAction<Record<string, Record<string, string>>>>,
-    watchlistName: string,
-    ticker: string,
-    value: string,
-  ) => {
-    setter((prev) => ({
-      ...prev,
-      [watchlistName]: {
-        ...(prev[watchlistName] || {}),
-        [ticker]: value,
-      },
-    }));
   };
 
   const handleAddManualStock = async (watchlistName: string) => {
@@ -339,107 +270,64 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
 
   useEffect(() => {
     (async () => {
-      try {
-        const [categoriesResp, resp] = await Promise.all([
-          loadCustomWatchlistCategoriesFromDb(),
-          loadCustomWatchlistsFromDb(),
-        ]);
-        const dbWatchlists = resp.watchlists || [];
-        const dbCategories = categoriesResp.categories || [];
-        if (dbWatchlists.length > 0) {
-          const watchlistsMap: WatchlistCache = {};
-          const watchlistDataMap: Record<string, StockData[]> = {};
-          const watchlistDescriptions: Record<string, string> = {};
-          const watchlistCategories: Record<string, string> = {};
-          const stockDescriptions: Record<string, Record<string, string>> = {};
-          const stockSubcategories: Record<string, Record<string, string>> = {};
-          const orderedNames = [...dbWatchlists]
-            .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-            .map((w) => w.name);
-          for (const w of dbWatchlists) {
-            watchlistsMap[w.name] = w.tickers || [];
-            watchlistDataMap[w.name] = (w.data || []) as StockData[];
-            watchlistDescriptions[w.name] = w.description || "";
-            watchlistCategories[w.name] = (w.category || "").trim();
-            stockDescriptions[w.name] = w.stock_descriptions || {};
-            stockSubcategories[w.name] = (w as any).stock_subcategories || {};
-          }
-          const categoriesFromWatchlists = Array.from(
-            new Set(Object.values(watchlistCategories)),
-          ).filter(Boolean);
-          const orderedCategories = [
-            ...dbCategories
-              .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-              .map((c) => c.name),
-            ...categoriesFromWatchlists.filter(
-              (c) => !dbCategories.some((x) => x.name === c),
-            ),
-          ];
-          setWatchlists(watchlistsMap);
-          setWatchlistOrder(orderedNames);
-          setWatchlistDescriptionByName(watchlistDescriptions);
-          setWatchlistNameDraftByName(
-            Object.fromEntries(
-              Object.keys(watchlistsMap).map((name) => [name, name]),
-            ),
-          );
-          setWatchlistDescriptionDraftByName(watchlistDescriptions);
-          setWatchlistCategoryByName(watchlistCategories);
-          setCategoryOrder(orderedCategories);
-          setExpandedByCategory(
-            Object.fromEntries(
-              orderedCategories.map((category) => [category, true]),
-            ),
-          );
-          setStockDescriptionsByWatchlist(stockDescriptions);
-          setStockSubcategoriesByWatchlist(stockSubcategories);
-          // Keep refs in sync immediately so early saves/refreshes
-          // don't accidentally wipe DB fields before effects run.
-          watchlistDescriptionByNameRef.current = watchlistDescriptions;
-          stockDescriptionsByWatchlistRef.current = stockDescriptions;
-          stockSubcategoriesByWatchlistRef.current = stockSubcategories;
-          // Also mirror to local cache for resilience/offline.
-          saveWatchlistDescriptionsByName(watchlistDescriptions);
-          saveStockDescriptionsByWatchlist(stockDescriptions);
-          saveStockSubcategoriesByWatchlist(stockSubcategories);
-          setWatchlistData(watchlistDataMap);
-          saveWatchlists(watchlistsMap);
-          return;
+      const applyLoadedState = ({
+        effectiveWatchlists,
+      }: {
+        effectiveWatchlists: CustomWatchlistDbEntry[];
+      }) => {
+        const watchlistsMap: WatchlistsMap = {};
+        const watchlistDataMap: Record<string, StockData[]> = {};
+        const watchlistDescriptions: Record<string, string> = {};
+        const stockDescriptions: Record<string, Record<string, string>> = {};
+        const orderedNames = [...effectiveWatchlists]
+          .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+          .map((w) => w.name);
+        for (const w of effectiveWatchlists) {
+          watchlistsMap[w.name] = w.tickers || [];
+          watchlistDataMap[w.name] = (w.data || []) as StockData[];
+          watchlistDescriptions[w.name] = w.description || "";
+          stockDescriptions[w.name] = w.stock_descriptions || {};
         }
+        setWatchlists(watchlistsMap);
+        setWatchlistOrder(orderedNames);
+        setWatchlistDescriptionByName(watchlistDescriptions);
+        setWatchlistNameDraftByName(
+          Object.fromEntries(
+            Object.keys(watchlistsMap).map((name) => [name, name]),
+          ),
+        );
+        setWatchlistDescriptionDraftByName(watchlistDescriptions);
+        setStockDescriptionsByWatchlist(stockDescriptions);
+        stockDescriptionsByWatchlistRef.current = stockDescriptions;
+        setWatchlistData(watchlistDataMap);
+      };
+
+      try {
+        const resp = await loadCustomWatchlistsFromDb(resourceTab);
+        const metaWatchlist = findResourceTabMetaWatchlist(
+          resp.watchlists || [],
+          resourceTab,
+        );
+        const loadedTabDescription = metaWatchlist?.description?.trim()
+          ? metaWatchlist.description
+          : AREAS_OF_INTEREST_DESCRIPTION;
+        setTabDescription(loadedTabDescription);
+        applyLoadedState({
+          effectiveWatchlists: (resp.watchlists || []).filter(
+            (w) =>
+              !isManagedThemeWatchlistName(w.name) &&
+              !isResourceTabMetaWatchlistName(w.name),
+          ),
+        });
       } catch (e) {
         console.warn(
-          "Failed to load custom watchlists from DB, falling back to local cache:",
+          "Failed to load custom watchlists from DB:",
           e,
         );
+        applyLoadedState({ effectiveWatchlists: [] });
       }
-
-      const loaded = loadWatchlists();
-      const loadedWatchlistDescriptions = loadWatchlistDescriptionsByName();
-      const loadedStockDescriptions = loadStockDescriptionsByWatchlist();
-      const loadedStockSubcategories = loadStockSubcategoriesByWatchlist();
-      const watchlistNames = Object.keys(loaded);
-      const watchlistDescriptions = Object.fromEntries(
-        watchlistNames.map((name) => [
-          name,
-          loadedWatchlistDescriptions[name] || "",
-        ]),
-      );
-      setWatchlists(loaded);
-      setWatchlistOrder(watchlistNames);
-      setWatchlistDescriptionByName(watchlistDescriptions);
-      setWatchlistNameDraftByName(
-        Object.fromEntries(watchlistNames.map((name) => [name, name])),
-      );
-      setWatchlistDescriptionDraftByName(watchlistDescriptions);
-      setWatchlistCategoryByName({});
-      setExpandedByCategory({});
-      setStockDescriptionsByWatchlist(loadedStockDescriptions);
-      setStockSubcategoriesByWatchlist(loadedStockSubcategories);
-      watchlistDescriptionByNameRef.current = watchlistDescriptions;
-      stockDescriptionsByWatchlistRef.current = loadedStockDescriptions;
-      stockSubcategoriesByWatchlistRef.current = loadedStockSubcategories;
     })();
-  }, []);
+  }, [resourceTab, isAdmin]);
 
   useEffect(() => {
     if (useCustomRange) return;
@@ -467,28 +355,17 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
       order?: number;
       category?: string;
       stockDescriptions?: Record<string, string>;
-      stockSubcategories?: Record<string, string>;
     },
   ) => {
     const nextDescription =
-      overrides?.description ??
-      watchlistDescriptionByNameRef.current[watchlistName] ??
-      "";
+      overrides?.description ?? watchlistDescriptionByName[watchlistName] ?? "";
     const nextOrder =
       overrides?.order ?? Math.max(0, watchlistOrder.indexOf(watchlistName));
     const nextCategory =
-      (
-        overrides?.category ??
-        watchlistCategoryByName[watchlistName] ??
-        ""
-      ).trim() || UNCATEGORIZED;
+      (overrides?.category ?? UNCATEGORIZED).trim() || UNCATEGORIZED;
     const nextStockDescriptions =
       overrides?.stockDescriptions ??
       stockDescriptionsByWatchlistRef.current[watchlistName] ??
-      {};
-    const nextStockSubcategories =
-      overrides?.stockSubcategories ??
-      stockSubcategoriesByWatchlistRef.current[watchlistName] ??
       {};
     await saveCustomWatchlistToDb(
       watchlistName,
@@ -499,17 +376,28 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
         description: nextDescription,
         order: nextOrder,
         category: nextCategory,
+        resourceTab,
         stockDescriptions: nextStockDescriptions,
-        stockSubcategories: nextStockSubcategories,
       },
     );
   };
 
-  const handleCreateWatchlist = async (categoryName: string) => {
+  const handleCreateWatchlist = async () => {
     if (!requireAdmin()) return;
-    const name = (newWatchlistNameByCategory[categoryName] || "").trim();
+    const name = newWatchlistName.trim();
     if (!name) {
       showPopup("Please enter a watchlist name");
+      return;
+    }
+    const managedTab = getManagedThemeWatchlistTab(name);
+    if (managedTab) {
+      showPopup(
+        `"${name}" is managed on the ${getManagedThemeWatchlistLabel(name)} tab.`,
+      );
+      return;
+    }
+    if (isResourceTabMetaWatchlistName(name)) {
+      showPopup("That watchlist name is reserved.");
       return;
     }
     if (watchlists[name]) {
@@ -524,205 +412,23 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
     setWatchlistNameDraftByName((prev) => ({ ...prev, [name]: name }));
     setEditingWatchlistNameByName((prev) => ({ ...prev, [name]: false }));
     setWatchlistDescriptionDraftByName((prev) => ({ ...prev, [name]: "" }));
-    setWatchlistCategoryByName((prev) => ({ ...prev, [name]: categoryName }));
     setStockDescriptionsByWatchlist((prev) => ({ ...prev, [name]: {} }));
-    setStockSubcategoriesByWatchlist((prev) => ({ ...prev, [name]: {} }));
-    saveWatchlists(updated);
     setExpandedByWatchlist((prev) => ({ ...prev, [name]: true }));
     setEditModeByWatchlist((prev) => ({ ...prev, [name]: true }));
     setSortAscendingByWatchlist((prev) => ({ ...prev, [name]: true }));
-    setNewWatchlistNameByCategory((prev) => ({ ...prev, [categoryName]: "" }));
-    setShowCreateWatchlistByCategory((prev) => ({
-      ...prev,
-      [categoryName]: false,
-    }));
+    setNewWatchlistName("");
+    setShowCreateWatchlistControls(false);
     try {
       await saveWatchlist(name, [], [], null, {
         description: "",
         order: nextOrder.length - 1,
-        category: categoryName,
+        category: UNCATEGORIZED,
         stockDescriptions: {},
-        stockSubcategories: {},
       });
     } catch (e: any) {
       showPopup(
         `Created locally but failed to save watchlist to DB: ${e.message}`,
       );
-    }
-  };
-
-  const handleCreateCategory = async () => {
-    if (!requireAdmin()) return;
-    const name = newCategoryName.trim();
-    if (!name) {
-      showPopup("Please enter a category name");
-      return;
-    }
-    if (name === UNCATEGORIZED || categoryOrder.includes(name)) {
-      showPopup("Category already exists");
-      return;
-    }
-    const nextOrder = [...categoryOrder, name];
-    setCategoryOrder(nextOrder);
-    setExpandedByCategory((prev) => ({ ...prev, [name]: true }));
-    setNewCategoryName("");
-    setShowCreateCategoryControls(false);
-    try {
-      await saveCustomWatchlistCategoryToDb(name, nextOrder.length - 1);
-    } catch (e: any) {
-      showPopup(`Created category locally but failed to sync DB: ${e.message}`);
-    }
-  };
-
-  const handleDeleteCategory = async (category: string) => {
-    if (!requireAdmin()) return;
-    if (
-      !confirm(
-        `Delete category "${category}"? This will also delete all watchlists in it.`,
-      )
-    )
-      return;
-    const affectedWatchlists = Object.keys(watchlists).filter(
-      (watchlistName) =>
-        (watchlistCategoryByName[watchlistName] || "") === category,
-    );
-    const nextWatchlists = removeKeys({ ...watchlists }, affectedWatchlists);
-    const nextWatchlistData = removeKeys(
-      { ...watchlistData },
-      affectedWatchlists,
-    );
-    const nextDescriptions = removeKeys(
-      { ...watchlistDescriptionByName },
-      affectedWatchlists,
-    );
-    const nextNameDrafts = removeKeys(
-      { ...watchlistNameDraftByName },
-      affectedWatchlists,
-    );
-    const nextNameEditing = removeKeys(
-      { ...editingWatchlistNameByName },
-      affectedWatchlists,
-    );
-    const nextDescriptionDrafts = removeKeys(
-      { ...watchlistDescriptionDraftByName },
-      affectedWatchlists,
-    );
-    const nextDescriptionEditing = removeKeys(
-      { ...editingWatchlistDescriptionByName },
-      affectedWatchlists,
-    );
-    const nextStockDescriptions = removeKeys(
-      { ...stockDescriptionsByWatchlist },
-      affectedWatchlists,
-    );
-    const nextStockSubcategories = removeKeys(
-      { ...stockSubcategoriesByWatchlist },
-      affectedWatchlists,
-    );
-    const nextExpandedStockByWatchlist = removeKeys(
-      { ...expandedStockByWatchlist },
-      affectedWatchlists,
-    );
-    const nextEditingStockByWatchlist = removeKeys(
-      { ...editingStockByWatchlist },
-      affectedWatchlists,
-    );
-    const nextStockDescriptionDraftByWatchlist = removeKeys(
-      { ...stockDescriptionDraftByWatchlist },
-      affectedWatchlists,
-    );
-    const nextEditingStockSubcategoryByWatchlist = removeKeys(
-      { ...editingStockSubcategoryByWatchlist },
-      affectedWatchlists,
-    );
-    const nextStockSubcategoryDraftByWatchlist = removeKeys(
-      { ...stockSubcategoryDraftByWatchlist },
-      affectedWatchlists,
-    );
-    const nextExpandedByWatchlist = removeKeys(
-      { ...expandedByWatchlist },
-      affectedWatchlists,
-    );
-    const nextEditModeByWatchlist = removeKeys(
-      { ...editModeByWatchlist },
-      affectedWatchlists,
-    );
-    const nextSortColumnByWatchlist = removeKeys(
-      { ...sortColumnByWatchlist },
-      affectedWatchlists,
-    );
-    const nextSortAscendingByWatchlist = removeKeys(
-      { ...sortAscendingByWatchlist },
-      affectedWatchlists,
-    );
-    const nextNewTickerByWatchlist = removeKeys(
-      { ...newTickerByWatchlist },
-      affectedWatchlists,
-    );
-    const nextWatchlistCategoryByName = removeKeys(
-      { ...watchlistCategoryByName },
-      affectedWatchlists,
-    );
-    const nextWatchlistOrder = watchlistOrder.filter(
-      (name) => !affectedWatchlists.includes(name),
-    );
-
-    setWatchlists(nextWatchlists);
-    saveWatchlists(nextWatchlists);
-    setWatchlistData(nextWatchlistData);
-    setWatchlistDescriptionByName(nextDescriptions);
-    watchlistDescriptionByNameRef.current = nextDescriptions;
-    saveWatchlistDescriptionsByName(nextDescriptions);
-    setWatchlistNameDraftByName(nextNameDrafts);
-    setEditingWatchlistNameByName(nextNameEditing);
-    setWatchlistDescriptionDraftByName(nextDescriptionDrafts);
-    setEditingWatchlistDescriptionByName(nextDescriptionEditing);
-    setStockDescriptionsByWatchlist(nextStockDescriptions);
-    setStockSubcategoriesByWatchlist(nextStockSubcategories);
-    setExpandedStockByWatchlist(nextExpandedStockByWatchlist);
-    setEditingStockByWatchlist(nextEditingStockByWatchlist);
-    setStockDescriptionDraftByWatchlist(nextStockDescriptionDraftByWatchlist);
-    setEditingStockSubcategoryByWatchlist(
-      nextEditingStockSubcategoryByWatchlist,
-    );
-    setStockSubcategoryDraftByWatchlist(nextStockSubcategoryDraftByWatchlist);
-    setExpandedByWatchlist(nextExpandedByWatchlist);
-    setEditModeByWatchlist(nextEditModeByWatchlist);
-    setSortColumnByWatchlist(nextSortColumnByWatchlist);
-    setSortAscendingByWatchlist(nextSortAscendingByWatchlist);
-    setNewTickerByWatchlist(nextNewTickerByWatchlist);
-    setWatchlistCategoryByName(nextWatchlistCategoryByName);
-    setWatchlistOrder(nextWatchlistOrder);
-    setCategoryOrder((prev) => prev.filter((name) => name !== category));
-    setExpandedByCategory((prev) => {
-      const next = { ...prev };
-      delete next[category];
-      return next;
-    });
-    setShowCreateWatchlistByCategory((prev) => {
-      const next = { ...prev };
-      delete next[category];
-      return next;
-    });
-    setNewWatchlistNameByCategory((prev) => {
-      const next = { ...prev };
-      delete next[category];
-      return next;
-    });
-    setEditingCategoryByName((prev) => {
-      const next = { ...prev };
-      delete next[category];
-      return next;
-    });
-    setCategoryRenameByName((prev) => {
-      const next = { ...prev };
-      delete next[category];
-      return next;
-    });
-    try {
-      await deleteCustomWatchlistCategoryFromDb(category);
-    } catch (e: any) {
-      showPopup(`Deleted category locally but failed to sync DB: ${e.message}`);
     }
   };
 
@@ -770,7 +476,6 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
         ...prev,
         [watchlistName]: nextStockDescriptions,
       }));
-      saveWatchlists(updated);
       setNewTickerByWatchlist((prev) => ({ ...prev, [watchlistName]: "" }));
       try {
         await saveWatchlist(
@@ -809,7 +514,6 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
     delete nextStockDescriptions[ticker];
 
     setWatchlists(updated);
-    saveWatchlists(updated);
     setWatchlistData((prev) => ({ ...prev, [watchlistName]: filteredData }));
     setStockDescriptionsByWatchlist((prev) => ({
       ...prev,
@@ -850,28 +554,14 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
     }
   };
 
-  const persistCategoryOrder = async (nextOrder: string[]) => {
-    if (!requireAdmin("Unlock to reorder categories.")) return;
-    setCategoryOrder(nextOrder);
-    try {
-      await Promise.all(
-        nextOrder.map((name, index) =>
-          saveCustomWatchlistCategoryToDb(name, index),
-        ),
-      );
-    } catch (e: any) {
-      showPopup(
-        `Category order changed locally but failed to sync DB: ${e.message}`,
-      );
-    }
-  };
-
   const getRenderableWatchlistNames = () => {
-    const orderedWatchlistNames = watchlistOrder.filter((name) =>
-      Boolean(watchlists[name]),
+    const orderedWatchlistNames = watchlistOrder.filter(
+      (name) => Boolean(watchlists[name]) && !isManagedThemeWatchlistName(name),
     );
     const unorderedWatchlistNames = Object.keys(watchlists).filter(
-      (name) => !orderedWatchlistNames.includes(name),
+      (name) =>
+        !orderedWatchlistNames.includes(name) &&
+        !isManagedThemeWatchlistName(name),
     );
     return [...orderedWatchlistNames, ...unorderedWatchlistNames];
   };
@@ -910,13 +600,6 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
       setDraggedWatchlistName(null);
       return;
     }
-    const sourceCategory = watchlistCategoryByName[sourceWatchlistName] || "";
-    const targetCategory = watchlistCategoryByName[targetWatchlistName] || "";
-    if (!sourceCategory || sourceCategory !== targetCategory) {
-      setDragOverWatchlistName(null);
-      setDraggedWatchlistName(null);
-      return;
-    }
 
     const currentOrder = getRenderableWatchlistNames();
     const sourceIndex = currentOrder.indexOf(sourceWatchlistName);
@@ -941,169 +624,39 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
     setDragOverWatchlistName(null);
   };
 
-  const handleCategoryDragStart = (
-    event: DragEvent<HTMLDivElement>,
-    categoryName: string,
-  ) => {
-    if (!isAdmin) return;
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/plain", categoryName);
-    setDraggedCategoryName(categoryName);
-  };
-
-  const handleCategoryDragOver = (
-    event: DragEvent<HTMLDivElement>,
-    categoryName: string,
-  ) => {
-    if (!isAdmin) return;
-    event.preventDefault();
-    if (draggedCategoryName && draggedCategoryName !== categoryName) {
-      setDragOverCategoryName(categoryName);
-    }
-  };
-
-  const handleCategoryDrop = async (
-    event: DragEvent<HTMLDivElement>,
-    targetCategoryName: string,
-  ) => {
-    if (!isAdmin) return;
-    event.preventDefault();
-    const sourceCategoryName =
-      draggedCategoryName || event.dataTransfer.getData("text/plain");
-    if (!sourceCategoryName || sourceCategoryName === targetCategoryName) {
-      setDraggedCategoryName(null);
-      setDragOverCategoryName(null);
-      return;
-    }
-    const sourceIndex = categoryOrder.indexOf(sourceCategoryName);
-    const targetIndex = categoryOrder.indexOf(targetCategoryName);
-    if (sourceIndex < 0 || targetIndex < 0) {
-      setDraggedCategoryName(null);
-      setDragOverCategoryName(null);
-      return;
-    }
-    const nextOrder = [...categoryOrder];
-    nextOrder.splice(sourceIndex, 1);
-    nextOrder.splice(targetIndex, 0, sourceCategoryName);
-    setDraggedCategoryName(null);
-    setDragOverCategoryName(null);
-    await persistCategoryOrder(nextOrder);
-  };
-
-  const handleCategoryDragEnd = () => {
-    if (!isAdmin) return;
-    setDraggedCategoryName(null);
-    setDragOverCategoryName(null);
-  };
-
-  const handleStartEditCategoryName = (category: string) => {
+  const handleSaveTabDescription = async () => {
     if (!requireAdmin()) return;
-    setCategoryRenameByName((prev) => ({ ...prev, [category]: category }));
-    setEditingCategoryByName((prev) => ({ ...prev, [category]: true }));
-  };
-
-  const handleSaveCategoryName = async (oldCategory: string) => {
-    if (!requireAdmin()) return;
-    const renamed = (categoryRenameByName[oldCategory] || "").trim();
-    if (!renamed) {
-      showPopup("Category name cannot be empty.");
-      return;
-    }
-    if (renamed === oldCategory) {
-      setEditingCategoryByName((prev) => ({ ...prev, [oldCategory]: false }));
-      return;
-    }
-    if (categoryOrder.includes(renamed)) {
-      showPopup("Category already exists.");
-      return;
-    }
-
-    const nextCategoryOrder = categoryOrder.map((name) =>
-      name === oldCategory ? renamed : name,
-    );
-    const nextWatchlistCategoryByName = Object.fromEntries(
-      Object.entries(watchlistCategoryByName).map(
-        ([watchlistName, category]) => [
-          watchlistName,
-          category === oldCategory ? renamed : category,
-        ],
-      ),
-    );
-
-    setCategoryOrder(nextCategoryOrder);
-    setWatchlistCategoryByName(nextWatchlistCategoryByName);
-    setExpandedByCategory((prev) => renameKey(prev, oldCategory, renamed));
-    setShowCreateWatchlistByCategory((prev) =>
-      renameKey(prev, oldCategory, renamed),
-    );
-    setNewWatchlistNameByCategory((prev) =>
-      renameKey(prev, oldCategory, renamed),
-    );
-    setEditingCategoryByName((prev) => {
-      const next = renameKey(prev, oldCategory, renamed);
-      next[renamed] = false;
-      return next;
-    });
-    setCategoryRenameByName((prev) => {
-      const next = renameKey(prev, oldCategory, renamed);
-      next[renamed] = renamed;
-      return next;
-    });
-
+    const nextDescription = draftTabDescription.trim();
+    setTabDescription(nextDescription);
+    setIsEditingTabDescription(false);
     try {
-      const targetIndex = nextCategoryOrder.indexOf(renamed);
-      await saveCustomWatchlistCategoryToDb(renamed, targetIndex);
-      const watchlistsToMove = Object.keys(watchlists).filter(
-        (watchlistName) =>
-          watchlistCategoryByName[watchlistName] === oldCategory,
-      );
-      await Promise.all(
-        watchlistsToMove.map((watchlistName) =>
-          saveWatchlist(
-            watchlistName,
-            watchlists[watchlistName] || [],
-            watchlistData[watchlistName] || [],
-            null,
-            {
-              category: renamed,
-            },
-          ),
-        ),
-      );
-      await deleteCustomWatchlistCategoryFromDb(oldCategory);
+      await saveResourceTabDescription(resourceTab, nextDescription);
     } catch (e: any) {
-      showPopup(
-        `Renamed locally but failed to sync category rename: ${e.message}`,
-      );
+      showPopup(`Saved locally but failed to sync tab description: ${e.message}`);
     }
   };
 
   const handleSaveWatchlistDescription = async (watchlistName: string) => {
     if (!requireAdmin()) return;
-    const nextDescription =
-      watchlistDescriptionDraftByName[watchlistName] || "";
-    const nextDescriptions = {
-      ...watchlistDescriptionByNameRef.current,
-      [watchlistName]: nextDescription,
-    };
-    watchlistDescriptionByNameRef.current = nextDescriptions;
-    saveWatchlistDescriptionsByName(nextDescriptions);
-    setWatchlistDescriptionByName(nextDescriptions);
     try {
       await saveWatchlist(
         watchlistName,
         watchlists[watchlistName] || [],
         watchlistData[watchlistName] || [],
         null,
-        { description: nextDescription },
+        { description: watchlistDescriptionDraftByName[watchlistName] || "" },
       );
+      setWatchlistDescriptionByName((prev) => ({
+        ...prev,
+        [watchlistName]: watchlistDescriptionDraftByName[watchlistName] || "",
+      }));
       setEditingWatchlistDescriptionByName((prev) => ({
         ...prev,
         [watchlistName]: false,
       }));
     } catch (e: any) {
       showPopup(
-        `Saved locally but failed to sync area description: ${e.message}`,
+        `Saved locally but failed to sync watchlist description: ${e.message}`,
       );
     }
   };
@@ -1113,8 +666,7 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
     const nextName = (
       watchlistNameDraftByName[watchlistName] ?? watchlistName
     ).trim();
-    const currentDescription =
-      watchlistDescriptionByNameRef.current[watchlistName] || "";
+    const currentDescription = watchlistDescriptionByName[watchlistName] || "";
 
     if (!nextName) {
       showPopup("Watchlist name cannot be empty.");
@@ -1128,7 +680,6 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
     if (nextName !== watchlistName) {
       const tickers = watchlists[watchlistName] || [];
       const data = watchlistData[watchlistName] || [];
-      const category = watchlistCategoryByName[watchlistName] || "";
       const order = Math.max(0, watchlistOrder.indexOf(watchlistName));
       const stockDescriptions =
         stockDescriptionsByWatchlist[watchlistName] || {};
@@ -1137,7 +688,6 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
         const next = { ...prev };
         delete next[watchlistName];
         next[nextName] = tickers;
-        saveWatchlists(next);
         return next;
       });
       setWatchlistData((prev) => renameKey(prev, watchlistName, nextName));
@@ -1151,13 +701,7 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
       setWatchlistDescriptionDraftByName((prev) =>
         renameKey(prev, watchlistName, nextName),
       );
-      setWatchlistCategoryByName((prev) =>
-        renameKey(prev, watchlistName, nextName),
-      );
       setStockDescriptionsByWatchlist((prev) =>
-        renameKey(prev, watchlistName, nextName),
-      );
-      setStockSubcategoriesByWatchlist((prev) =>
         renameKey(prev, watchlistName, nextName),
       );
       setExpandedByWatchlist((prev) =>
@@ -1192,25 +736,17 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
       setStockDescriptionDraftByWatchlist((prev) =>
         renameKey(prev, watchlistName, nextName),
       );
-      setEditingStockSubcategoryByWatchlist((prev) =>
-        renameKey(prev, watchlistName, nextName),
-      );
-      setStockSubcategoryDraftByWatchlist((prev) =>
-        renameKey(prev, watchlistName, nextName),
-      );
       setWatchlistOrder((prev) =>
         prev.map((name) => (name === watchlistName ? nextName : name)),
       );
 
       try {
-        const stockSubcategories =
-          stockSubcategoriesByWatchlist[watchlistName] || {};
         await saveCustomWatchlistToDb(nextName, tickers, data, null, {
           description: currentDescription,
           order,
-          category,
+          category: UNCATEGORIZED,
+          resourceTab,
           stockDescriptions,
-          stockSubcategories,
         });
         await deleteCustomWatchlistFromDb(watchlistName);
       } catch (e: any) {
@@ -1241,7 +777,6 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
       ...stockDescriptionsByWatchlistRef.current,
       [watchlistName]: nextStockDescriptions,
     };
-    saveStockDescriptionsByWatchlist(stockDescriptionsByWatchlistRef.current);
     setStockDescriptionsByWatchlist((prev) => ({
       ...prev,
       [watchlistName]: nextStockDescriptions,
@@ -1266,93 +801,6 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
     } catch (e: any) {
       showPopup(
         `Saved locally but failed to sync stock description: ${e.message}`,
-      );
-    }
-  };
-
-  const handleStartEditStockSubcategory = (
-    watchlistName: string,
-    ticker: string,
-  ) => {
-    if (!requireAdmin()) return;
-    const live = stockSubcategoriesByWatchlist[watchlistName]?.[ticker] || "";
-    setStringByWatchlistTicker(
-      setStockSubcategoryDraftByWatchlist,
-      watchlistName,
-      ticker,
-      live,
-    );
-    setBoolByWatchlistTicker(
-      setEditingStockSubcategoryByWatchlist,
-      watchlistName,
-      ticker,
-      true,
-    );
-  };
-
-  const handleCancelEditStockSubcategory = (
-    watchlistName: string,
-    ticker: string,
-  ) => {
-    setBoolByWatchlistTicker(
-      setEditingStockSubcategoryByWatchlist,
-      watchlistName,
-      ticker,
-      false,
-    );
-  };
-
-  const handleDraftStockSubcategoryChange = (
-    watchlistName: string,
-    ticker: string,
-    value: string,
-  ) => {
-    setStringByWatchlistTicker(
-      setStockSubcategoryDraftByWatchlist,
-      watchlistName,
-      ticker,
-      value,
-    );
-  };
-
-  const handleSaveStockSubcategory = async (
-    watchlistName: string,
-    ticker: string,
-    subcategory: string,
-  ) => {
-    if (!requireAdmin()) return;
-    const nextStockSubcategories = {
-      ...(stockSubcategoriesByWatchlist[watchlistName] || {}),
-      [ticker]: subcategory,
-    };
-    stockSubcategoriesByWatchlistRef.current = {
-      ...stockSubcategoriesByWatchlistRef.current,
-      [watchlistName]: nextStockSubcategories,
-    };
-    saveStockSubcategoriesByWatchlist(stockSubcategoriesByWatchlistRef.current);
-    setStockSubcategoriesByWatchlist((prev) => ({
-      ...prev,
-      [watchlistName]: nextStockSubcategories,
-    }));
-    try {
-      await saveWatchlist(
-        watchlistName,
-        watchlists[watchlistName] || [],
-        watchlistData[watchlistName] || [],
-        null,
-        {
-          stockSubcategories: nextStockSubcategories,
-        },
-      );
-      setBoolByWatchlistTicker(
-        setEditingStockSubcategoryByWatchlist,
-        watchlistName,
-        ticker,
-        false,
-      );
-    } catch (e: any) {
-      showPopup(
-        `Saved locally but failed to sync stock subcategory: ${e.message}`,
       );
     }
   };
@@ -1427,7 +875,6 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
     delete updated[watchlistName];
     setWatchlists(updated);
     setWatchlistOrder((prev) => prev.filter((name) => name !== watchlistName));
-    saveWatchlists(updated);
     setWatchlistData((prev) => {
       const next = { ...prev };
       delete next[watchlistName];
@@ -1446,8 +893,6 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
     setWatchlistDescriptionByName((prev) => {
       const next = { ...prev };
       delete next[watchlistName];
-      watchlistDescriptionByNameRef.current = next;
-      saveWatchlistDescriptionsByName(next);
       return next;
     });
     setWatchlistNameDraftByName((prev) => {
@@ -1470,17 +915,7 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
       delete next[watchlistName];
       return next;
     });
-    setWatchlistCategoryByName((prev) => {
-      const next = { ...prev };
-      delete next[watchlistName];
-      return next;
-    });
     setStockDescriptionsByWatchlist((prev) => {
-      const next = { ...prev };
-      delete next[watchlistName];
-      return next;
-    });
-    setStockSubcategoriesByWatchlist((prev) => {
       const next = { ...prev };
       delete next[watchlistName];
       return next;
@@ -1496,16 +931,6 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
       return next;
     });
     setStockDescriptionDraftByWatchlist((prev) => {
-      const next = { ...prev };
-      delete next[watchlistName];
-      return next;
-    });
-    setEditingStockSubcategoryByWatchlist((prev) => {
-      const next = { ...prev };
-      delete next[watchlistName];
-      return next;
-    });
-    setStockSubcategoryDraftByWatchlist((prev) => {
       const next = { ...prev };
       delete next[watchlistName];
       return next;
@@ -1614,17 +1039,12 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
               nextData[watchlistName] || [],
               new Date().toISOString(),
               {
-                description:
-                  watchlistDescriptionByNameRef.current[watchlistName] || "",
+                description: watchlistDescriptionByName[watchlistName] || "",
                 order: Math.max(0, watchlistOrder.indexOf(watchlistName)),
-                category:
-                  watchlistCategoryByName[watchlistName] ||
-                  categoryOrder[0] ||
-                  "",
+                category: UNCATEGORIZED,
+                resourceTab,
                 stockDescriptions:
                   stockDescriptionsByWatchlistRef.current[watchlistName] || {},
-                stockSubcategories:
-                  stockSubcategoriesByWatchlistRef.current[watchlistName] || {},
               },
             );
           } catch (e: any) {
@@ -1700,13 +1120,9 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
       > = {};
 
       await runWithConcurrency(tasks, 24, async ({ watchlistName, ticker }) => {
-        const row = await fetchStockData(
-          ticker,
-          customStart,
-          customEnd,
-          undefined,
-          { includeReference: false },
-        );
+        const row = await fetchStockData(ticker, customStart, customEnd, {
+          includeReference: false,
+        });
         if (!customByWatchlistAndTicker[watchlistName])
           customByWatchlistAndTicker[watchlistName] = {};
         customByWatchlistAndTicker[watchlistName][ticker] =
@@ -1759,47 +1175,211 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
   const hasMarketData = watchlistNames.some(
     (name) => (watchlistData[name] || []).length > 0,
   );
-  const renderedCategories = [
-    ...categoryOrder,
-    ...(
-      Object.values(watchlistCategoryByName).filter(
-        (category, idx, arr) =>
-          Boolean(category) && arr.indexOf(category) === idx,
-      ) || []
-    ).filter((category) => !categoryOrder.includes(category)),
-  ];
+
+  const renderWatchlistSection = (sectionWatchlistName: string) => {
+    const isExpanded = expandedByWatchlist[sectionWatchlistName] ?? true;
+    const isEditing = editModeByWatchlist[sectionWatchlistName] ?? false;
+    const isBusy = loadingAll || validatingWatchlist === sectionWatchlistName;
+    const tickers = watchlists[sectionWatchlistName] || [];
+    const currentData = watchlistData[sectionWatchlistName] || [];
+    const manualRows = currentData.filter((row) => !tickers.includes(row.Ticker));
+
+    return (
+      <WatchlistSection
+        key={`watchlist-${sectionWatchlistName}`}
+        watchlistName={sectionWatchlistName}
+        isAdmin={isAdmin}
+        isExpanded={isExpanded}
+        isEditing={isEditing}
+        isBusy={isBusy}
+        isDragOver={dragOverWatchlistName === sectionWatchlistName}
+        isDragged={draggedWatchlistName === sectionWatchlistName}
+        tickers={tickers}
+        currentData={currentData}
+        manualRows={manualRows}
+        watchlistNameDraft={
+          watchlistNameDraftByName[sectionWatchlistName] ?? sectionWatchlistName
+        }
+        editingWatchlistName={Boolean(
+          editingWatchlistNameByName[sectionWatchlistName],
+        )}
+        watchlistDescription={
+          watchlistDescriptionByName[sectionWatchlistName] || ""
+        }
+        watchlistDescriptionDraft={
+          watchlistDescriptionDraftByName[sectionWatchlistName] || ""
+        }
+        editingWatchlistDescription={Boolean(
+          editingWatchlistDescriptionByName[sectionWatchlistName],
+        )}
+        newTicker={newTickerByWatchlist[sectionWatchlistName] || ""}
+        newManualTicker={newManualByWatchlist[sectionWatchlistName]?.ticker || ""}
+        newManualMarketCap={
+          newManualByWatchlist[sectionWatchlistName]?.marketCap || ""
+        }
+        sortColumn={sortColumnByWatchlist[sectionWatchlistName] || ""}
+        sortAscending={sortAscendingByWatchlist[sectionWatchlistName] ?? true}
+        useCustomRange={useCustomRange}
+        formatValue={formatValue}
+        stockDescriptionsByWatchlist={stockDescriptionsByWatchlist}
+        expandedStockByWatchlist={expandedStockByWatchlist}
+        editingStockByWatchlist={editingStockByWatchlist}
+        stockDescriptionDraftByWatchlist={stockDescriptionDraftByWatchlist}
+        onDragStart={(event) =>
+          handleWatchlistDragStart(event, sectionWatchlistName)
+        }
+        onDragOver={(event) =>
+          handleWatchlistDragOver(event, sectionWatchlistName)
+        }
+        onDrop={(event) =>
+          void handleWatchlistDrop(event, sectionWatchlistName)
+        }
+        onDragEnd={handleWatchlistDragEnd}
+        onToggleExpanded={() =>
+          setExpandedByWatchlist((prev) => ({
+            ...prev,
+            [sectionWatchlistName]: !isExpanded,
+          }))
+        }
+        onStartEditWatchlistName={() => {
+          setWatchlistNameDraftByName((prev) => ({
+            ...prev,
+            [sectionWatchlistName]: sectionWatchlistName,
+          }));
+          setEditingWatchlistNameByName((prev) => ({
+            ...prev,
+            [sectionWatchlistName]: true,
+          }));
+        }}
+        onWatchlistNameDraftChange={(value) =>
+          setWatchlistNameDraftByName((prev) => ({
+            ...prev,
+            [sectionWatchlistName]: value,
+          }))
+        }
+        onSaveWatchlistName={() =>
+          void handleSaveWatchlistName(sectionWatchlistName)
+        }
+        onToggleEditMode={() => {
+          const nextIsEditing = !isEditing;
+          setEditModeByWatchlist((prev) => ({
+            ...prev,
+            [sectionWatchlistName]: nextIsEditing,
+          }));
+          setWatchlistDescriptionDraftByName((prev) => ({
+            ...prev,
+            [sectionWatchlistName]: nextIsEditing
+              ? watchlistDescriptionByName[sectionWatchlistName] || ""
+              : prev[sectionWatchlistName] || "",
+          }));
+          setEditingWatchlistDescriptionByName((prev) => ({
+            ...prev,
+            [sectionWatchlistName]: nextIsEditing,
+          }));
+        }}
+        onDeleteWatchlist={() => handleDeleteWatchlist(sectionWatchlistName)}
+        onCancelEditWatchlistDescription={() => {
+          setWatchlistDescriptionDraftByName((prev) => ({
+            ...prev,
+            [sectionWatchlistName]:
+              watchlistDescriptionByName[sectionWatchlistName] || "",
+          }));
+        }}
+        onWatchlistDescriptionDraftChange={(value) =>
+          setWatchlistDescriptionDraftByName((prev) => ({
+            ...prev,
+            [sectionWatchlistName]: value,
+          }))
+        }
+        onSaveWatchlistDescription={() =>
+          void handleSaveWatchlistDescription(sectionWatchlistName)
+        }
+        onNewTickerChange={(value) =>
+          setNewTickerByWatchlist((prev) => ({
+            ...prev,
+            [sectionWatchlistName]: value,
+          }))
+        }
+        onAddTicker={() => handleAddTicker(sectionWatchlistName)}
+        onNewManualTickerChange={(value) =>
+          setNewManualByWatchlist((prev) => ({
+            ...prev,
+            [sectionWatchlistName]: {
+              ticker: value,
+              marketCap: prev[sectionWatchlistName]?.marketCap || "",
+            },
+          }))
+        }
+        onNewManualMarketCapChange={(value) =>
+          setNewManualByWatchlist((prev) => ({
+            ...prev,
+            [sectionWatchlistName]: {
+              ticker: prev[sectionWatchlistName]?.ticker || "",
+              marketCap: value,
+            },
+          }))
+        }
+        onAddManualStock={() => void handleAddManualStock(sectionWatchlistName)}
+        onRemoveTicker={(ticker) =>
+          handleRemoveTicker(sectionWatchlistName, ticker)
+        }
+        onRemoveManualStock={(ticker) =>
+          void handleRemoveManualStock(sectionWatchlistName, ticker)
+        }
+        onSetSortColumn={(value) =>
+          setSortColumnByWatchlist((prev) => ({
+            ...prev,
+            [sectionWatchlistName]: value,
+          }))
+        }
+        onSetSortAscending={(value) =>
+          setSortAscendingByWatchlist((prev) => ({
+            ...prev,
+            [sectionWatchlistName]: value,
+          }))
+        }
+        onToggleTickerExpand={(ticker) =>
+          handleToggleStockRowExpand(sectionWatchlistName, ticker)
+        }
+        onStartEditDescription={(ticker) =>
+          handleStartEditStockDescription(sectionWatchlistName, ticker)
+        }
+        onCancelEditDescription={(ticker) =>
+          handleCancelEditStockDescription(sectionWatchlistName, ticker)
+        }
+        onDraftDescriptionChange={(ticker, value) =>
+          handleDraftStockDescriptionChange(sectionWatchlistName, ticker, value)
+        }
+        onSaveDescription={(ticker, value) =>
+          void handleSaveStockDescription(sectionWatchlistName, ticker, value)
+        }
+      />
+    );
+  };
 
   return (
     <div style={{ width: "100%" }}>
+      <EditableTabDescription
+        description={tabDescription}
+        isAdmin={isAdmin}
+        isEditing={isEditingTabDescription}
+        draft={draftTabDescription}
+        onStartEdit={() => {
+          setDraftTabDescription(tabDescription);
+          setIsEditingTabDescription(true);
+        }}
+        onDraftChange={setDraftTabDescription}
+        onSave={() => void handleSaveTabDescription()}
+        onCancel={() => setIsEditingTabDescription(false)}
+      />
+
       <div style={{ marginBottom: "1rem" }}>
-        <div
-          style={{
-            display: "flex",
-            gap: "1rem",
-            justifyContent: "center",
-            flexWrap: "wrap",
-            marginBottom: "1rem",
-          }}
-        >
-          <button
-            type="button"
+        <div style={refreshWatchlistsToolbarStyle}>
+          <RefreshWatchlistsButton
             onClick={handleRefreshAllWatchlists}
             disabled={loadingAll || Boolean(validatingWatchlist)}
-            style={{
-              padding: "0.75rem 1.5rem",
-              backgroundColor: "#000000",
-              color: "#ffffff",
-              border: "none",
-              borderRadius: "6px",
-              cursor:
-                loadingAll || validatingWatchlist ? "not-allowed" : "pointer",
-              fontSize: "0.875rem",
-              fontWeight: 600,
-              opacity: loadingAll || validatingWatchlist ? 0.6 : 1,
-            }}
-          >
-            {loadingAll ? "Refreshing..." : "Refresh All Watchlists"}
-          </button>
+            loading={loadingAll}
+          />
         </div>
 
         {isAdmin && hasMarketData && (
@@ -1867,17 +1447,11 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
                     !isAdmin || loadingAll || Boolean(validatingWatchlist)
                   }
                   style={{
-                    padding: "0.65rem 1rem",
-                    backgroundColor: "#000000",
-                    color: "#ffffff",
-                    border: "none",
-                    borderRadius: "6px",
+                    ...primaryActionButtonStyle,
                     cursor:
                       loadingAll || validatingWatchlist
                         ? "not-allowed"
                         : "pointer",
-                    fontSize: "0.85rem",
-                    fontWeight: 600,
                     opacity: loadingAll || validatingWatchlist ? 0.6 : 1,
                   }}
                 >
@@ -1971,275 +1545,11 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
 
       {watchlistNames.length === 0 && (
         <div style={{ padding: "2rem", textAlign: "center", color: "#666666" }}>
-          {renderedCategories.length === 0
-            ? "Create your first category to get started."
-            : "No watchlists created yet. Create one inside a category."}
+          No watchlists yet. Create one to get started.
         </div>
       )}
 
-      {renderedCategories.map((category) => {
-        const watchlistsInCategory = watchlistNames.filter(
-          (watchlistName) =>
-            (watchlistCategoryByName[watchlistName] || "") === category,
-        );
-        const isCategoryExpanded = expandedByCategory[category] ?? true;
-
-        return (
-          <CategorySection
-            key={`category-${category}`}
-            category={category}
-            isAdmin={isAdmin}
-            isExpanded={isCategoryExpanded}
-            isDragged={draggedCategoryName === category}
-            isDragOver={dragOverCategoryName === category}
-            isEditingName={Boolean(editingCategoryByName[category])}
-            renameDraft={categoryRenameByName[category] || ""}
-            showCreateWatchlist={Boolean(showCreateWatchlistByCategory[category])}
-            newWatchlistName={newWatchlistNameByCategory[category] || ""}
-            watchlistsInCategoryCount={watchlistsInCategory.length}
-            onToggleExpanded={() =>
-              setExpandedByCategory((prev) => ({
-                ...prev,
-                [category]: !isCategoryExpanded,
-              }))
-            }
-            onStartEditName={() => handleStartEditCategoryName(category)}
-            onRenameDraftChange={(value) =>
-              setCategoryRenameByName((prev) => ({ ...prev, [category]: value }))
-            }
-            onSaveName={() => void handleSaveCategoryName(category)}
-            onDelete={() => handleDeleteCategory(category)}
-            onShowCreateWatchlist={() =>
-              setShowCreateWatchlistByCategory((prev) => ({
-                ...prev,
-                [category]: true,
-              }))
-            }
-            onNewWatchlistNameChange={(value) =>
-              setNewWatchlistNameByCategory((prev) => ({
-                ...prev,
-                [category]: value,
-              }))
-            }
-            onCreateWatchlist={() => void handleCreateWatchlist(category)}
-            onCancelCreateWatchlist={() => {
-              setShowCreateWatchlistByCategory((prev) => ({
-                ...prev,
-                [category]: false,
-              }));
-              setNewWatchlistNameByCategory((prev) => ({
-                ...prev,
-                [category]: "",
-              }));
-            }}
-            onDragStart={(event) => handleCategoryDragStart(event, category)}
-            onDragOver={(event) => handleCategoryDragOver(event, category)}
-            onDrop={(event) => void handleCategoryDrop(event, category)}
-            onDragEnd={handleCategoryDragEnd}
-          >
-            {watchlistsInCategory.map((watchlistName) => {
-              const isExpanded = expandedByWatchlist[watchlistName] ?? true;
-              const isEditing = editModeByWatchlist[watchlistName] ?? false;
-              const isBusy = loadingAll || validatingWatchlist === watchlistName;
-              const tickers = watchlists[watchlistName] || [];
-              const currentData = watchlistData[watchlistName] || [];
-              const manualRows = currentData.filter(
-                (row) => !tickers.includes(row.Ticker),
-              );
-
-              return (
-                <WatchlistSection
-                  watchlistName={watchlistName}
-                  isAdmin={isAdmin}
-                  isExpanded={isExpanded}
-                  isEditing={isEditing}
-                  isBusy={isBusy}
-                  isDragOver={dragOverWatchlistName === watchlistName}
-                  isDragged={draggedWatchlistName === watchlistName}
-                  tickers={tickers}
-                  currentData={currentData}
-                  manualRows={manualRows}
-                  watchlistNameDraft={
-                    watchlistNameDraftByName[watchlistName] ?? watchlistName
-                  }
-                  editingWatchlistName={Boolean(
-                    editingWatchlistNameByName[watchlistName],
-                  )}
-                  watchlistDescription={
-                    watchlistDescriptionByName[watchlistName] || ""
-                  }
-                  watchlistDescriptionDraft={
-                    watchlistDescriptionDraftByName[watchlistName] || ""
-                  }
-                  editingWatchlistDescription={Boolean(
-                    editingWatchlistDescriptionByName[watchlistName],
-                  )}
-                  newTicker={newTickerByWatchlist[watchlistName] || ""}
-                  newManualTicker={
-                    newManualByWatchlist[watchlistName]?.ticker || ""
-                  }
-                  newManualMarketCap={
-                    newManualByWatchlist[watchlistName]?.marketCap || ""
-                  }
-                  sortColumn={sortColumnByWatchlist[watchlistName] || ""}
-                  sortAscending={sortAscendingByWatchlist[watchlistName] ?? true}
-                  useCustomRange={useCustomRange}
-                  formatValue={formatValue}
-                  stockDescriptionsByWatchlist={stockDescriptionsByWatchlist}
-                  stockSubcategoriesByWatchlist={stockSubcategoriesByWatchlist}
-                  expandedStockByWatchlist={expandedStockByWatchlist}
-                  editingStockByWatchlist={editingStockByWatchlist}
-                  stockDescriptionDraftByWatchlist={stockDescriptionDraftByWatchlist}
-                  editingStockSubcategoryByWatchlist={
-                    editingStockSubcategoryByWatchlist
-                  }
-                  stockSubcategoryDraftByWatchlist={stockSubcategoryDraftByWatchlist}
-                  onDragStart={(event) =>
-                    handleWatchlistDragStart(event, watchlistName)
-                  }
-                  onDragOver={(event) =>
-                    handleWatchlistDragOver(event, watchlistName)
-                  }
-                  onDrop={(event) => void handleWatchlistDrop(event, watchlistName)}
-                  onDragEnd={handleWatchlistDragEnd}
-                  onToggleExpanded={() =>
-                    setExpandedByWatchlist((prev) => ({
-                      ...prev,
-                      [watchlistName]: !isExpanded,
-                    }))
-                  }
-                  onStartEditWatchlistName={() => {
-                    setWatchlistNameDraftByName((prev) => ({
-                      ...prev,
-                      [watchlistName]: watchlistName,
-                    }));
-                    setEditingWatchlistNameByName((prev) => ({
-                      ...prev,
-                      [watchlistName]: true,
-                    }));
-                  }}
-                  onWatchlistNameDraftChange={(value) =>
-                    setWatchlistNameDraftByName((prev) => ({
-                      ...prev,
-                      [watchlistName]: value,
-                    }))
-                  }
-                  onSaveWatchlistName={() => void handleSaveWatchlistName(watchlistName)}
-                  onToggleEditMode={() => {
-                    const nextIsEditing = !isEditing;
-                    setEditModeByWatchlist((prev) => ({
-                      ...prev,
-                      [watchlistName]: nextIsEditing,
-                    }));
-
-                    // When entering edit mode, open description editing automatically.
-                    // When leaving edit mode, close it (and keep draft in sync with saved).
-                    setWatchlistDescriptionDraftByName((prev) => ({
-                      ...prev,
-                      [watchlistName]:
-                        nextIsEditing
-                          ? watchlistDescriptionByName[watchlistName] || ""
-                          : prev[watchlistName] || "",
-                    }));
-                    setEditingWatchlistDescriptionByName((prev) => ({
-                      ...prev,
-                      [watchlistName]: nextIsEditing,
-                    }));
-                  }}
-                  onDeleteWatchlist={() => handleDeleteWatchlist(watchlistName)}
-                  onCancelEditWatchlistDescription={() => {
-                    setWatchlistDescriptionDraftByName((prev) => ({
-                      ...prev,
-                      [watchlistName]:
-                        watchlistDescriptionByName[watchlistName] || "",
-                    }));
-                  }}
-                  onWatchlistDescriptionDraftChange={(value) =>
-                    setWatchlistDescriptionDraftByName((prev) => ({
-                      ...prev,
-                      [watchlistName]: value,
-                    }))
-                  }
-                  onSaveWatchlistDescription={() =>
-                    void handleSaveWatchlistDescription(watchlistName)
-                  }
-                  onNewTickerChange={(value) =>
-                    setNewTickerByWatchlist((prev) => ({
-                      ...prev,
-                      [watchlistName]: value,
-                    }))
-                  }
-                  onAddTicker={() => handleAddTicker(watchlistName)}
-                  onNewManualTickerChange={(value) =>
-                    setNewManualByWatchlist((prev) => ({
-                      ...prev,
-                      [watchlistName]: {
-                        ticker: value,
-                        marketCap: prev[watchlistName]?.marketCap || "",
-                      },
-                    }))
-                  }
-                  onNewManualMarketCapChange={(value) =>
-                    setNewManualByWatchlist((prev) => ({
-                      ...prev,
-                      [watchlistName]: {
-                        ticker: prev[watchlistName]?.ticker || "",
-                        marketCap: value,
-                      },
-                    }))
-                  }
-                  onAddManualStock={() => void handleAddManualStock(watchlistName)}
-                  onRemoveTicker={(ticker) =>
-                    handleRemoveTicker(watchlistName, ticker)
-                  }
-                  onRemoveManualStock={(ticker) =>
-                    void handleRemoveManualStock(watchlistName, ticker)
-                  }
-                  onSetSortColumn={(value) =>
-                    setSortColumnByWatchlist((prev) => ({
-                      ...prev,
-                      [watchlistName]: value,
-                    }))
-                  }
-                  onSetSortAscending={(value) =>
-                    setSortAscendingByWatchlist((prev) => ({
-                      ...prev,
-                      [watchlistName]: value,
-                    }))
-                  }
-                  onToggleTickerExpand={(ticker) =>
-                    handleToggleStockRowExpand(watchlistName, ticker)
-                  }
-                  onStartEditDescription={(ticker) =>
-                    handleStartEditStockDescription(watchlistName, ticker)
-                  }
-                  onCancelEditDescription={(ticker) =>
-                    handleCancelEditStockDescription(watchlistName, ticker)
-                  }
-                  onDraftDescriptionChange={(ticker, value) =>
-                    handleDraftStockDescriptionChange(watchlistName, ticker, value)
-                  }
-                  onSaveDescription={(ticker, value) =>
-                    void handleSaveStockDescription(watchlistName, ticker, value)
-                  }
-                  onStartEditSubcategory={(ticker) =>
-                    handleStartEditStockSubcategory(watchlistName, ticker)
-                  }
-                  onCancelEditSubcategory={(ticker) =>
-                    handleCancelEditStockSubcategory(watchlistName, ticker)
-                  }
-                  onDraftSubcategoryChange={(ticker, value) =>
-                    handleDraftStockSubcategoryChange(watchlistName, ticker, value)
-                  }
-                  onSaveSubcategory={(ticker, value) =>
-                    void handleSaveStockSubcategory(watchlistName, ticker, value)
-                  }
-                />
-              );
-            })}
-          </CategorySection>
-        );
-      })}
+      {watchlistNames.map((name) => renderWatchlistSection(name))}
 
       <div
         style={{
@@ -2248,10 +1558,10 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
           borderTop: "1px solid #e5e7eb",
         }}
       >
-        {!isAdmin ? null : !showCreateCategoryControls ? (
+        {!isAdmin ? null : !showCreateWatchlistControls ? (
           <button
             type="button"
-            onClick={() => setShowCreateCategoryControls(true)}
+            onClick={() => setShowCreateWatchlistControls(true)}
             style={{
               padding: "0.75rem 1.25rem",
               backgroundColor: "#111827",
@@ -2264,7 +1574,7 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
               marginRight: "0.75rem",
             }}
           >
-            Create Category
+            Create Watchlist
           </button>
         ) : (
           <div
@@ -2278,9 +1588,9 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
           >
             <input
               type="text"
-              value={newCategoryName}
-              onChange={(e) => setNewCategoryName(e.target.value)}
-              placeholder="Category Name"
+              value={newWatchlistName}
+              onChange={(e) => setNewWatchlistName(e.target.value)}
+              placeholder="Watchlist Name"
               style={{
                 padding: "0.75rem",
                 borderRadius: "4px",
@@ -2290,22 +1600,22 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
-                  handleCreateCategory();
+                  void handleCreateWatchlist();
                 }
               }}
             />
             <button
               type="button"
-              onClick={handleCreateCategory}
+              onClick={() => void handleCreateWatchlist()}
               style={primaryButtonStyle}
             >
-              Create Category
+              Create Watchlist
             </button>
             <button
               type="button"
               onClick={() => {
-                setShowCreateCategoryControls(false);
-                setNewCategoryName("");
+                setShowCreateWatchlistControls(false);
+                setNewWatchlistName("");
               }}
               style={cancelButtonStyle}
             >

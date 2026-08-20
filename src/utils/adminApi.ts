@@ -5,7 +5,9 @@ export type VerifyToolPasswordResponse = {
   error?: string;
 };
 
-export async function verifyToolPassword(password: string): Promise<VerifyToolPasswordResponse> {
+export async function verifyToolPassword(
+  password: string,
+): Promise<VerifyToolPasswordResponse> {
   const res = await fetch(getApiEndpoint("/api/admin/tool-password"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -34,4 +36,3 @@ export async function verifyToolPassword(password: string): Promise<VerifyToolPa
     error: payload.error,
   };
 }
-

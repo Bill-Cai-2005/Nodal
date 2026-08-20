@@ -30,7 +30,6 @@ function App() {
         <Route path="/tools" element={<NodalWatchlist />} />
         <Route path="/blogs" element={<Blogs />} />
         <Route path="/blogManagement" element={<BlogManagement />} />
-        <Route path="/BlogManagement" element={<BlogManagement />} />
         <Route path="/blog/:id" element={<Blog />} />
         <Route path="*" element={<NotFound />} />
       </Routes>

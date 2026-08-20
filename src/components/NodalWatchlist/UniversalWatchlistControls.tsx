@@ -1,4 +1,8 @@
 import { useEffect, useState } from "react";
+import {
+  primaryActionButtonStyle,
+  refreshWatchlistsToolbarStyle,
+} from "./watchlistButtonStyles";
 
 type ProgressState = {
   current: number;
@@ -68,37 +72,27 @@ const UniversalWatchlistControls = ({
   return (
     <>
       <div style={{ marginBottom: "1rem" }}>
-        <div style={{ display: "flex", gap: "1rem", justifyContent: "center", flexWrap: "wrap", marginBottom: "1rem" }}>
+        <div style={refreshWatchlistsToolbarStyle}>
           <button
+            type="button"
             onClick={onLoadMarketData}
-          disabled={loading}
-          style={{
-            padding: "0.75rem 1.5rem",
-            backgroundColor: "#000000",
-            color: "#ffffff",
-            border: "none",
-            borderRadius: "6px",
-            cursor: loading ? "not-allowed" : "pointer",
-            fontSize: "0.875rem",
-            fontWeight: 600,
-            opacity: loading ? 0.6 : 1,
-          }}
-        >
-          {hasData ? "Full Refresh" : "Load Market Data"}
+            disabled={loading}
+            style={{
+              ...primaryActionButtonStyle,
+              cursor: loading ? "not-allowed" : "pointer",
+              opacity: loading ? 0.6 : 1,
+            }}
+          >
+            {hasData ? "Full Refresh" : "Load Market Data"}
           </button>
           {hasData && (
             <button
+              type="button"
               onClick={onQuickRefresh}
               disabled={loading}
               style={{
-                padding: "0.75rem 1.5rem",
-                backgroundColor: "#000000",
-                color: "#ffffff",
-                border: "none",
-                borderRadius: "6px",
+                ...primaryActionButtonStyle,
                 cursor: loading ? "not-allowed" : "pointer",
-                fontSize: "0.875rem",
-                fontWeight: 600,
                 opacity: loading ? 0.6 : 1,
               }}
             >
@@ -142,14 +136,8 @@ const UniversalWatchlistControls = ({
                   onClick={onLoadHistoricalData}
                   disabled={loading}
                   style={{
-                    padding: "0.5rem 1rem",
-                    backgroundColor: "#000000",
-                    color: "#ffffff",
-                    border: "none",
-                    borderRadius: "6px",
+                    ...primaryActionButtonStyle,
                     cursor: loading ? "not-allowed" : "pointer",
-                    fontSize: "0.85rem",
-                    fontWeight: 600,
                     opacity: loading ? 0.6 : 1,
                   }}
                 >

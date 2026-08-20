@@ -16,6 +16,8 @@ import {
   loadWatchlists,
   saveWatchlists,
   type WatchlistCache,
+  loadWatchlistDescriptionsByName,
+  saveWatchlistDescriptionsByName,
   loadStockDescriptionsByWatchlist,
   saveStockDescriptionsByWatchlist,
   loadStockSubcategoriesByWatchlist,
@@ -88,12 +90,16 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
     useState<Record<string, Record<string, string>>>({});
 
   // Avoid stale-closure overwrites during async refresh/save flows.
+  const watchlistDescriptionByNameRef = useRef<Record<string, string>>({});
   const stockDescriptionsByWatchlistRef = useRef<
     Record<string, Record<string, string>>
   >({});
   const stockSubcategoriesByWatchlistRef = useRef<
     Record<string, Record<string, string>>
   >({});
+  useEffect(() => {
+    watchlistDescriptionByNameRef.current = watchlistDescriptionByName;
+  }, [watchlistDescriptionByName]);
   useEffect(() => {
     stockDescriptionsByWatchlistRef.current = stockDescriptionsByWatchlist;
   }, [stockDescriptionsByWatchlist]);
@@ -389,9 +395,11 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
           setStockSubcategoriesByWatchlist(stockSubcategories);
           // Keep refs in sync immediately so early saves/refreshes
           // don't accidentally wipe DB fields before effects run.
+          watchlistDescriptionByNameRef.current = watchlistDescriptions;
           stockDescriptionsByWatchlistRef.current = stockDescriptions;
           stockSubcategoriesByWatchlistRef.current = stockSubcategories;
           // Also mirror to local cache for resilience/offline.
+          saveWatchlistDescriptionsByName(watchlistDescriptions);
           saveStockDescriptionsByWatchlist(stockDescriptions);
           saveStockSubcategoriesByWatchlist(stockSubcategories);
           setWatchlistData(watchlistDataMap);
@@ -406,20 +414,28 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
       }
 
       const loaded = loadWatchlists();
+      const loadedWatchlistDescriptions = loadWatchlistDescriptionsByName();
       const loadedStockDescriptions = loadStockDescriptionsByWatchlist();
       const loadedStockSubcategories = loadStockSubcategoriesByWatchlist();
+      const watchlistNames = Object.keys(loaded);
+      const watchlistDescriptions = Object.fromEntries(
+        watchlistNames.map((name) => [
+          name,
+          loadedWatchlistDescriptions[name] || "",
+        ]),
+      );
       setWatchlists(loaded);
-      setWatchlistOrder(Object.keys(loaded));
+      setWatchlistOrder(watchlistNames);
+      setWatchlistDescriptionByName(watchlistDescriptions);
       setWatchlistNameDraftByName(
-        Object.fromEntries(Object.keys(loaded).map((name) => [name, name])),
+        Object.fromEntries(watchlistNames.map((name) => [name, name])),
       );
-      setWatchlistDescriptionDraftByName(
-        Object.fromEntries(Object.keys(loaded).map((name) => [name, ""])),
-      );
+      setWatchlistDescriptionDraftByName(watchlistDescriptions);
       setWatchlistCategoryByName({});
       setExpandedByCategory({});
       setStockDescriptionsByWatchlist(loadedStockDescriptions);
       setStockSubcategoriesByWatchlist(loadedStockSubcategories);
+      watchlistDescriptionByNameRef.current = watchlistDescriptions;
       stockDescriptionsByWatchlistRef.current = loadedStockDescriptions;
       stockSubcategoriesByWatchlistRef.current = loadedStockSubcategories;
     })();
@@ -455,7 +471,9 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
     },
   ) => {
     const nextDescription =
-      overrides?.description ?? watchlistDescriptionByName[watchlistName] ?? "";
+      overrides?.description ??
+      watchlistDescriptionByNameRef.current[watchlistName] ??
+      "";
     const nextOrder =
       overrides?.order ?? Math.max(0, watchlistOrder.indexOf(watchlistName));
     const nextCategory =
@@ -653,6 +671,8 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
     saveWatchlists(nextWatchlists);
     setWatchlistData(nextWatchlistData);
     setWatchlistDescriptionByName(nextDescriptions);
+    watchlistDescriptionByNameRef.current = nextDescriptions;
+    saveWatchlistDescriptionsByName(nextDescriptions);
     setWatchlistNameDraftByName(nextNameDrafts);
     setEditingWatchlistNameByName(nextNameEditing);
     setWatchlistDescriptionDraftByName(nextDescriptionDrafts);
@@ -1060,25 +1080,30 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
 
   const handleSaveWatchlistDescription = async (watchlistName: string) => {
     if (!requireAdmin()) return;
+    const nextDescription =
+      watchlistDescriptionDraftByName[watchlistName] || "";
+    const nextDescriptions = {
+      ...watchlistDescriptionByNameRef.current,
+      [watchlistName]: nextDescription,
+    };
+    watchlistDescriptionByNameRef.current = nextDescriptions;
+    saveWatchlistDescriptionsByName(nextDescriptions);
+    setWatchlistDescriptionByName(nextDescriptions);
     try {
       await saveWatchlist(
         watchlistName,
         watchlists[watchlistName] || [],
         watchlistData[watchlistName] || [],
         null,
-        { description: watchlistDescriptionDraftByName[watchlistName] || "" },
+        { description: nextDescription },
       );
-      setWatchlistDescriptionByName((prev) => ({
-        ...prev,
-        [watchlistName]: watchlistDescriptionDraftByName[watchlistName] || "",
-      }));
       setEditingWatchlistDescriptionByName((prev) => ({
         ...prev,
         [watchlistName]: false,
       }));
     } catch (e: any) {
       showPopup(
-        `Saved locally but failed to sync watchlist description: ${e.message}`,
+        `Saved locally but failed to sync area description: ${e.message}`,
       );
     }
   };
@@ -1088,7 +1113,8 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
     const nextName = (
       watchlistNameDraftByName[watchlistName] ?? watchlistName
     ).trim();
-    const currentDescription = watchlistDescriptionByName[watchlistName] || "";
+    const currentDescription =
+      watchlistDescriptionByNameRef.current[watchlistName] || "";
 
     if (!nextName) {
       showPopup("Watchlist name cannot be empty.");
@@ -1420,6 +1446,8 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
     setWatchlistDescriptionByName((prev) => {
       const next = { ...prev };
       delete next[watchlistName];
+      watchlistDescriptionByNameRef.current = next;
+      saveWatchlistDescriptionsByName(next);
       return next;
     });
     setWatchlistNameDraftByName((prev) => {
@@ -1586,7 +1614,8 @@ const CustomWatchlists = ({ isAdmin = false }: Props) => {
               nextData[watchlistName] || [],
               new Date().toISOString(),
               {
-                description: watchlistDescriptionByName[watchlistName] || "",
+                description:
+                  watchlistDescriptionByNameRef.current[watchlistName] || "",
                 order: Math.max(0, watchlistOrder.indexOf(watchlistName)),
                 category:
                   watchlistCategoryByName[watchlistName] ||

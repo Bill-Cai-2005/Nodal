@@ -7,6 +7,7 @@ export interface WatchlistCache {
 }
 
 const WATCHLISTS_KEY = "nodal_watchlists";
+const WATCHLIST_DESCRIPTIONS_KEY = "nodal_watchlist_descriptions_by_name";
 const STOCK_DESCRIPTIONS_KEY = "nodal_stock_descriptions_by_watchlist";
 const STOCK_SUBCATEGORIES_KEY = "nodal_stock_subcategories_by_watchlist";
 
@@ -24,6 +25,28 @@ export const saveWatchlists = (watchlists: WatchlistCache): void => {
     localStorage.setItem(WATCHLISTS_KEY, JSON.stringify(watchlists));
   } catch (err) {
     console.error("Failed to save watchlists:", err);
+  }
+};
+
+export const loadWatchlistDescriptionsByName = (): Record<string, string> => {
+  try {
+    const data = localStorage.getItem(WATCHLIST_DESCRIPTIONS_KEY);
+    return data ? JSON.parse(data) : {};
+  } catch {
+    return {};
+  }
+};
+
+export const saveWatchlistDescriptionsByName = (
+  watchlistDescriptionsByName: Record<string, string>,
+): void => {
+  try {
+    localStorage.setItem(
+      WATCHLIST_DESCRIPTIONS_KEY,
+      JSON.stringify(watchlistDescriptionsByName),
+    );
+  } catch (err) {
+    console.error("Failed to save watchlist descriptions:", err);
   }
 };
 

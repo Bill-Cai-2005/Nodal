@@ -114,10 +114,37 @@ router.put("/custom-watchlists/:name", async (req: Request, res: Response) => {
           .filter(Boolean)
       )
     );
-    const normalizedData = Array.isArray(data) ? data : [];
+
+    const existing = await CustomWatchlist.findOne({ name });
+
+    const normalizedDescription =
+      typeof description === "string"
+        ? description
+        : existing?.description || "";
+    const normalizedOrder = Number.isFinite(Number(order))
+      ? Number(order)
+      : Number.isFinite(existing?.order)
+        ? existing.order
+        : 0;
+    // Back-compat: older clients/watchlists may not include a category.
+    // Defaulting avoids silently failing saves (e.g. stock_subcategories updates).
+    const normalizedCategory =
+      typeof category === "string" && category.trim()
+        ? category.trim()
+        : existing?.category?.trim() || UNCATEGORIZED;
+    const normalizedData = Array.isArray(data)
+      ? data
+      : existing?.data || [];
+
     const normalizedStockDescriptions: Record<string, string> = {};
     if (stock_descriptions && typeof stock_descriptions === "object") {
       for (const [ticker, desc] of Object.entries(stock_descriptions)) {
+        const normalizedTicker = String(ticker || "").trim().toUpperCase();
+        if (!normalizedTicker) continue;
+        normalizedStockDescriptions[normalizedTicker] = String(desc || "").trim();
+      }
+    } else if (existing?.stockDescriptions) {
+      for (const [ticker, desc] of Object.entries(existing.stockDescriptions)) {
         const normalizedTicker = String(ticker || "").trim().toUpperCase();
         if (!normalizedTicker) continue;
         normalizedStockDescriptions[normalizedTicker] = String(desc || "").trim();
@@ -131,15 +158,13 @@ router.put("/custom-watchlists/:name", async (req: Request, res: Response) => {
         if (!normalizedTicker) continue;
         normalizedStockSubcategories[normalizedTicker] = String(sub || "").trim();
       }
+    } else if (existing?.stockSubcategories) {
+      for (const [ticker, sub] of Object.entries(existing.stockSubcategories)) {
+        const normalizedTicker = String(ticker || "").trim().toUpperCase();
+        if (!normalizedTicker) continue;
+        normalizedStockSubcategories[normalizedTicker] = String(sub || "").trim();
+      }
     }
-    const normalizedDescription = typeof description === "string" ? description : "";
-    const normalizedOrder = Number.isFinite(Number(order)) ? Number(order) : 0;
-    // Back-compat: older clients/watchlists may not include a category.
-    // Defaulting avoids silently failing saves (e.g. stock_subcategories updates).
-    const normalizedCategory =
-      typeof category === "string" && category.trim()
-        ? category.trim()
-        : "Uncategorized";
     const parsedLastRefreshed =
       last_refreshed === null || last_refreshed === undefined
         ? null

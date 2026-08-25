@@ -91,11 +91,6 @@ const AiBuildoutTable = ({
     );
   }
 
-  const formatVolume = (value: number | null): string => {
-    if (value === null) return "N/A";
-    return Math.round(value).toLocaleString();
-  };
-
   const sortedData = isAdmin
     ? [...data].sort((a, b) => {
         if (!sortColumn) return 0;
@@ -117,7 +112,6 @@ const AiBuildoutTable = ({
     "Market Cap",
     "Daily Stock Change %",
     ...(showCustomDatesChange ? ["Custom Dates Change %"] : []),
-    "Volume",
   ];
 
   const tagScrollContainerStyle = {
@@ -365,9 +359,6 @@ const AiBuildoutTable = ({
                         : formatPercentChange(row["Custom Dates Change %"])}
                     </td>
                   )}
-                  <td style={{ padding: "0.75rem" }}>
-                    {row.isManual ? "—" : formatVolume(row.Volume)}
-                  </td>
                 </tr>
                 {isExpanded && (
                   <tr>

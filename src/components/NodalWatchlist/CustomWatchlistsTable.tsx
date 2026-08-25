@@ -45,10 +45,6 @@ const CustomWatchlistsTable = ({
   onSaveDescription,
 }: Props) => {
   if (data.length === 0) return null;
-  const formatVolume = (value: number | null): string => {
-    if (value === null) return "N/A";
-    return Math.round(value).toLocaleString();
-  };
 
   const sortedData = isAdmin
     ? [...data].sort((a, b) => {
@@ -69,7 +65,6 @@ const CustomWatchlistsTable = ({
     "Market Cap",
     "Daily Stock Change %",
     ...(showCustomDatesChange ? ["Custom Dates Change %"] : []),
-    "Volume",
   ];
 
   return (
@@ -145,7 +140,6 @@ const CustomWatchlistsTable = ({
                       {formatPercentChange(row["Custom Dates Change %"])}
                     </td>
                   )}
-                  <td style={{ padding: "0.75rem" }}>{formatVolume(row.Volume)}</td>
                 </tr>
                 {isExpanded && (
                   <tr>

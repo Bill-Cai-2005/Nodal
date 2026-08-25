@@ -29,11 +29,6 @@ const UniversalWatchlistTable = ({
   onRowClick,
   selectedTicker,
 }: Props) => {
-  const formatVolume = (value: number | null): string => {
-    if (value === null) return "N/A";
-    return Math.round(value).toLocaleString();
-  };
-
   const columns = [
     "Ticker",
     "Starting Price",
@@ -41,7 +36,6 @@ const UniversalWatchlistTable = ({
     "Market Cap",
     "Daily Stock Change %",
     ...(useCustomRange ? ["Custom Dates Change %"] : []),
-    "Volume",
   ];
 
   return (
@@ -129,7 +123,6 @@ const UniversalWatchlistTable = ({
                     {formatPercentChange(row["Custom Dates Change %"])}
                   </td>
                 )}
-                <td style={{ padding: "0.75rem" }}>{formatVolume(row.Volume)}</td>
               </tr>
             ))}
           </tbody>

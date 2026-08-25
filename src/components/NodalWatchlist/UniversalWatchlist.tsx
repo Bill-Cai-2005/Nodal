@@ -396,7 +396,6 @@ const UniversalWatchlist = ({ isAdmin = false }: Props) => {
       "Market Cap",
       "Daily Stock Change %",
       "Custom Dates Change %",
-      "Volume",
     ];
     return cols.every((col) => col in row);
   });

@@ -20,6 +20,7 @@ import watchlistCacheRouter from "./routes/watchlistCache.js";
 import polygonProxyRouter from "./routes/polygonProxy.js";
 import companySummaryRouter from "./routes/companySummary.js";
 import adminRouter from "./routes/admin.js";
+import connectionsRouter from "./routes/connections.js";
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
@@ -93,6 +94,7 @@ app.use("/api/watchlist-cache", watchlistCacheRouter);
 app.use("/api/polygon", polygonProxyRouter);
 app.use("/api/company-summary", companySummaryRouter);
 app.use("/api/admin", adminRouter);
+app.use("/api/connections", connectionsRouter);
 
 // Health check
 app.get("/health", (_req: express.Request, res: express.Response) => {
@@ -117,6 +119,9 @@ app.get("/.well-known/appspecific/com.chrome.devtools.json", (_req: express.Requ
   res.status(404).json({});
 });
 
+export default app;
+
+if (process.env.NODE_ENV !== "test") {
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server is running on http://0.0.0.0:${PORT}`);
 }).on("error", (error: NodeJS.ErrnoException) => {
@@ -175,3 +180,4 @@ process.on("unhandledRejection", (reason: unknown, promise: Promise<unknown>) =>
   console.error("Unhandled Rejection at:", promise, "reason:", reason);
   gracefulShutdown("unhandledRejection");
 });
+}

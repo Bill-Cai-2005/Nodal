@@ -2,14 +2,14 @@ import express, { Request, Response } from "express";
 import connectDB from "../utils/connectDB.js";
 import StockConnection from "../models/StockConnection.js";
 import { authorizeAdminPassword } from "../utils/adminAuth.js";
+import {
+  groupConnectionPairs,
+  normalizePair,
+  normalizeTicker,
+} from "../utils/stockConnections.js";
 
 const router = express.Router();
-const TICKER_PATTERN = /^[A-Z0-9][A-Z0-9.-]{0,9}$/;
 let legacyConnectionsMigrated = false;
-
-function normalizeTicker(value: unknown): string {
-  return String(value ?? "").trim().toUpperCase();
-}
 
 function getAdminPassword(req: Request): unknown {
   return req.header("x-admin-password") || req.body?.password;
@@ -22,21 +22,6 @@ function requireAdmin(req: Request, res: Response): boolean {
     return false;
   }
   return true;
-}
-
-function normalizePair(source: unknown, target: unknown) {
-  const sourceTicker = normalizeTicker(source);
-  const targetTicker = normalizeTicker(target);
-
-  if (
-    !TICKER_PATTERN.test(sourceTicker) ||
-    !TICKER_PATTERN.test(targetTicker) ||
-    sourceTicker === targetTicker
-  ) {
-    return null;
-  }
-
-  return { sourceTicker, targetTicker };
 }
 
 async function migrateLegacyConnections() {
@@ -58,32 +43,13 @@ async function migrateLegacyConnections() {
     .toArray();
 
   if (legacyPairs.length > 0) {
-    const connectedByTicker = new Map<string, Set<string>>();
-    for (const pair of legacyPairs) {
-      const normalized = normalizePair(pair.sourceTicker, pair.targetTicker);
-      if (!normalized) continue;
-
-      if (!connectedByTicker.has(normalized.sourceTicker)) {
-        connectedByTicker.set(normalized.sourceTicker, new Set());
-      }
-      if (!connectedByTicker.has(normalized.targetTicker)) {
-        connectedByTicker.set(normalized.targetTicker, new Set());
-      }
-      connectedByTicker
-        .get(normalized.sourceTicker)!
-        .add(normalized.targetTicker);
-      connectedByTicker
-        .get(normalized.targetTicker)!
-        .add(normalized.sourceTicker);
-    }
-
     await collection.deleteMany({
       sourceTicker: { $exists: true },
       targetTicker: { $exists: true },
     });
 
     await StockConnection.bulkWrite(
-      [...connectedByTicker.entries()].map(([ticker, connectedTickers]) => ({
+      groupConnectionPairs(legacyPairs).map(({ ticker, connectedTickers }) => ({
         updateOne: {
           filter: { ticker },
           update: {

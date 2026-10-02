@@ -18,3 +18,15 @@ services:
       # - CLOUDINARY_CLOUD_NAME: Your Cloudinary cloud name (for image storage)
       # - CLOUDINARY_API_KEY: Your Cloudinary API key
       # - CLOUDINARY_API_SECRET: Your Cloudinary API secret
+  # Pair Screener (Streamlit), embedded in the Resources page's "Pair Screener" tab.
+  # After it deploys, set VITE_PAIR_SCREENER_URL on Vercel to this service's URL.
+  - type: web
+    name: nodal-pair-screener
+    env: python
+    plan: free
+    rootDir: pythonscreening
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run app.py --server.port $PORT --server.address 0.0.0.0
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.0

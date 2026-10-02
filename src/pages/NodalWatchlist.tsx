@@ -6,6 +6,7 @@ import { useResponsivePadding } from "../hooks/useResponsivePadding";
 import UniversalWatchlist from "../components/NodalWatchlist/UniversalWatchlist";
 import CustomWatchlists from "../components/NodalWatchlist/CustomWatchlists";
 import AiBuildoutWatchlist from "../components/NodalWatchlist/AiBuildoutWatchlist";
+import PairScreener from "../components/NodalWatchlist/PairScreener";
 import { verifyToolPassword } from "../utils/adminApi";
 import {
   RESOURCE_TAB_AI_BUILDOUT,
@@ -15,6 +16,8 @@ import {
   AI_APPLICATIONS_WATCHLIST_NAME,
   AI_APPLICATIONS_DESCRIPTION,
 } from "../utils/watchlistCacheApi";
+
+const RESOURCE_TAB_PAIR_SCREENER = "pair-screener";
 
 const NodalWatchlist = () => {
   const navigate = useNavigate();
@@ -156,6 +159,12 @@ const NodalWatchlist = () => {
           >
             AI Applications
           </button>
+          <button
+            onClick={() => setActiveTab(RESOURCE_TAB_PAIR_SCREENER)}
+            style={getTabStyle(RESOURCE_TAB_PAIR_SCREENER)}
+          >
+            Pair Screener
+          </button>
         </div>
 
         {activeTab === "universal" && isAdmin ? (
@@ -173,6 +182,8 @@ const NodalWatchlist = () => {
             watchlistName={AI_APPLICATIONS_WATCHLIST_NAME}
             defaultDescription={AI_APPLICATIONS_DESCRIPTION}
           />
+        ) : activeTab === RESOURCE_TAB_PAIR_SCREENER ? (
+          <PairScreener />
         ) : (
           <CustomWatchlists
             key={activeTab}

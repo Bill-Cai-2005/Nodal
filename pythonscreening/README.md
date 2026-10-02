@@ -13,6 +13,57 @@ correlated and still drift apart for good. Before trading a pair you'd also need
 to confirm that the price spread between the two stocks mean-reverts
 (cointegration). This screen doesn't check that.
 
+## Visualizer (Pair Screener tab)
+
+`app.py` is a Streamlit app that turns the screen into an interactive page. The
+Nodal site embeds it as the **Pair Screener** tab on the Resources page
+(`src/components/NodalWatchlist/PairScreener.tsx`).
+
+- **Top pairs:** the ranked list, filterable by lookback (3M to 2Y), market cap,
+  sector and same-sector. Click a row to chart the pair.
+- **Look up a pair:** the same charts for any two stocks.
+- **Overview:** how all 2.7M correlations are distributed, and which sectors the
+  top pairs come from.
+
+Each pair gets indexed prices, the spread's z-score, a 60-day rolling
+correlation and a returns scatter, plus hedge ratio and mean-reversion
+half-life.
+
+The app reads a snapshot in `data/` (cleaned, deduped prices and company info,
+about 6MB) and recomputes correlations on the fly. It never downloads anything,
+so it loads fast and works on a free host. **The snapshot is committed, so to
+update the data, run the pipeline and commit `data/`:**
+
+```bash
+python pair_correlation.py --refresh
+git add data && git commit -m "Refresh pair screener data"
+```
+
+### Running the site with the screener locally
+
+```bash
+# terminal 1, from pythonscreening/
+source venv/bin/activate
+streamlit run app.py          # http://localhost:8501
+
+# terminal 2, from the repo root
+npm install && npm run dev    # open /tools, then the Pair Screener tab
+```
+
+In dev the tab loads `http://localhost:8501` automatically.
+
+### Deploying
+
+1. Deploy the Streamlit app. `render.yaml` defines it as the
+   `nodal-pair-screener` service. Any Python host works if it runs
+   `streamlit run app.py` from this folder, so `.streamlit/config.toml` (the
+   Nodal theme) gets picked up.
+2. On Vercel, set `VITE_PAIR_SCREENER_URL` to the app's URL and redeploy.
+   Without it, the tab shows a "not configured" message instead of the app.
+
+Render's free plan sleeps after inactivity, so the first visit after a while
+takes up to a minute while the tab shows a loading message.
+
 ## Running it
 
 One-time setup (needs Python 3.10+):

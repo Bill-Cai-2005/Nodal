@@ -43,6 +43,8 @@ RETRY_PAUSE_SEC = 30.0
 BASE_DIR = Path(__file__).resolve().parent
 CACHE_DIR = BASE_DIR / "cache"
 OUTPUT_DIR = BASE_DIR / "output"
+# Committed snapshot the Streamlit app (app.py) reads, so it never has to download.
+DATA_DIR = BASE_DIR / "data"
 
 BROWSER_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
@@ -263,11 +265,21 @@ def correlation_matrix(close: pd.DataFrame) -> pd.DataFrame:
 
 # ---------------------------------------------------------------- 6. rank
 
-def top_pairs(corr: pd.DataFrame, universe: pd.DataFrame, n: int) -> pd.DataFrame:
+def top_pairs(corr: pd.DataFrame, universe: pd.DataFrame, n: int,
+              same_sector_only: bool = False, hide_flagged: bool = False) -> pd.DataFrame:
     c = corr.to_numpy()
     i, j = np.triu_indices_from(c, k=1)  # each pair once, no self-pairs
     vals = c[i, j]
-    top = np.argsort(vals)[::-1][:n]
+    meta = universe.set_index("ticker")[["name", "sector", "industry", "market_cap"]]
+
+    keep = np.ones(len(vals), dtype=bool)
+    if same_sector_only:
+        sector = meta["sector"].reindex(corr.columns).to_numpy()
+        keep &= sector[i] == sector[j]
+    if hide_flagged:
+        keep &= vals < REVIEW_THRESHOLD
+    candidates = np.flatnonzero(keep)
+    top = candidates[np.argsort(vals[candidates])[::-1][:n]]
 
     tickers = corr.columns.to_numpy()
     pairs = pd.DataFrame({
@@ -277,7 +289,6 @@ def top_pairs(corr: pd.DataFrame, universe: pd.DataFrame, n: int) -> pd.DataFram
         "correlation": vals[top].round(4),
     })
 
-    meta = universe.set_index("ticker")[["name", "sector", "industry", "market_cap"]]
     for side in ["a", "b"]:
         pairs = pairs.join(meta.add_suffix(f"_{side}"), on=f"ticker_{side}")
     pairs["same_sector"] = pairs["sector_a"] == pairs["sector_b"]
@@ -290,6 +301,19 @@ def top_pairs(corr: pd.DataFrame, universe: pd.DataFrame, n: int) -> pd.DataFram
             "review_flag", "sector_a", "sector_b", "same_sector", "industry_a",
             "industry_b", "same_industry", "market_cap_a", "market_cap_b"]
     return pairs[cols]
+
+
+# ---------------------------------------------------------------- snapshot
+
+def write_snapshot(close: pd.DataFrame, universe: pd.DataFrame) -> None:
+    """Saves the cleaned, deduped prices and their metadata for the Streamlit app.
+    float32 halves the file size; correlations agree with float64 to ~1e-6."""
+    DATA_DIR.mkdir(exist_ok=True)
+    close = close.rename_axis(columns="ticker")  # yfinance names this axis "Ticker"
+    close.astype("float32").to_parquet(DATA_DIR / "prices.parquet", compression="zstd")
+    meta = universe.set_index("ticker").loc[close.columns,
+                                            ["name", "exchange", "sector", "industry", "market_cap"]]
+    meta.to_parquet(DATA_DIR / "universe.parquet")
 
 
 # ---------------------------------------------------------------- main
@@ -325,6 +349,7 @@ def main() -> None:
     close, removed = dedupe_share_classes(close, volume, cik_map, universe)
     removed.to_csv(OUTPUT_DIR / "removed_share_classes.csv", index=False)
     print(f"  removed {len(removed)} duplicate share classes, {close.shape[1]} companies remain")
+    write_snapshot(close, universe)
 
     print("5. Correlate")
     t0 = time.perf_counter()

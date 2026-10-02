@@ -1,0 +1,7 @@
+yfinance
+pandas
+numpy
+requests
+pyarrow
+streamlit>=1.45
+plotly>=5.24

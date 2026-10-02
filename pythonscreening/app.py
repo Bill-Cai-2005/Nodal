@@ -42,7 +42,9 @@ SECURITY_SUFFIX = re.compile(
 
 @st.cache_data
 def load_snapshot() -> tuple[pd.DataFrame, pd.DataFrame]:
-    prices = pd.read_parquet(DATA_DIR / "prices.parquet").astype("float64")
+    # float32 halves every matrix the screen builds (needed on a 512MB host);
+    # correlations agree with float64 to ~1e-6.
+    prices = pd.read_parquet(DATA_DIR / "prices.parquet")
     meta = pd.read_parquet(DATA_DIR / "universe.parquet")
     meta["name"] = meta["name"].str.replace(SECURITY_SUFFIX, "", regex=True).str.strip()
     return prices, meta
@@ -66,19 +68,23 @@ def screen(lookback: str, min_cap: str, sectors: tuple[str, ...], same_sector_on
 
     corr = correlation_matrix(window(prices[keep.index], lookback))
     pairs = top_pairs(corr, keep.reset_index(), TOP_N, same_sector_only, hide_flagged)
-    vals = corr.to_numpy()[np.triu_indices(len(corr), k=1)]
-    hist, edges = np.histogram(vals, bins=np.linspace(-0.2, 1.0, 61))
+    # Histogram row by row over the upper triangle; one array of all pairs would
+    # cost more memory than a free host allows.
+    c = corr.to_numpy()
+    low = np.floor(min(-0.2, c.min()) * 10) / 10  # rare negative pairs still get a bin
+    edges = np.linspace(low, 1.0, round((1.0 - low) / 0.02) + 1)
+    hist = sum(np.histogram(c[row, row + 1:], bins=edges)[0] for row in range(len(c) - 1))
     return {
         "pairs": pairs,
         "n_companies": len(corr),
-        "n_pairs": len(vals),
+        "n_pairs": len(corr) * (len(corr) - 1) // 2,
         "hist": pd.DataFrame({"lo": edges[:-1], "hi": edges[1:], "count": hist}),
     }
 
 
 def pair_stats(a: pd.Series, b: pd.Series) -> dict:
     """Spread and mean-reversion stats for one pair over the selected window."""
-    log_a, log_b = np.log(a), np.log(b)
+    log_a, log_b = np.log(a.astype("float64")), np.log(b.astype("float64"))
     hedge, _ = np.polyfit(log_b, log_a, 1)  # log A ~ hedge * log B
     spread = log_a - hedge * log_b
     z = (spread - spread.mean()) / spread.std()

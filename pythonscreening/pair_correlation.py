@@ -267,26 +267,34 @@ def correlation_matrix(close: pd.DataFrame) -> pd.DataFrame:
 
 def top_pairs(corr: pd.DataFrame, universe: pd.DataFrame, n: int,
               same_sector_only: bool = False, hide_flagged: bool = False) -> pd.DataFrame:
-    c = corr.to_numpy()
-    i, j = np.triu_indices_from(c, k=1)  # each pair once, no self-pairs
-    vals = c[i, j]
+    # Masks excluded pairs to -inf in one copy of the matrix, row by row, instead of
+    # building index arrays over all ~2.7M pairs. Keeps peak memory low enough for the
+    # Streamlit app to run on a 512MB host.
+    c = corr.to_numpy(copy=True)
     meta = universe.set_index("ticker")[["name", "sector", "industry", "market_cap"]]
-
-    keep = np.ones(len(vals), dtype=bool)
-    if same_sector_only:
-        sector = meta["sector"].reindex(corr.columns).to_numpy()
-        keep &= sector[i] == sector[j]
+    sector = meta["sector"].reindex(corr.columns).to_numpy()
+    for row in range(len(c)):
+        c[row, :row + 1] = -np.inf  # each pair once (upper triangle), no self-pairs
+        if same_sector_only:
+            c[row, sector != sector[row]] = -np.inf
     if hide_flagged:
-        keep &= vals < REVIEW_THRESHOLD
-    candidates = np.flatnonzero(keep)
-    top = candidates[np.argsort(vals[candidates])[::-1][:n]]
+        c[c >= REVIEW_THRESHOLD] = -np.inf
+
+    # The nth-largest value as a cutoff, then only the pairs at or above it. Cheaper
+    # than argpartition, which returns an index for every pair.
+    flat = c.ravel()
+    k = min(n, flat.size)
+    cutoff = np.partition(flat, flat.size - k)[flat.size - k] if k else np.inf
+    top = np.flatnonzero((flat >= cutoff) & np.isfinite(flat))  # filters can leave < n pairs
+    top = top[np.argsort(flat[top], kind="stable")[::-1]][:n]
+    i, j = np.divmod(top, len(c))
 
     tickers = corr.columns.to_numpy()
     pairs = pd.DataFrame({
         "rank": np.arange(1, len(top) + 1),
-        "ticker_a": tickers[i[top]],
-        "ticker_b": tickers[j[top]],
-        "correlation": vals[top].round(4),
+        "ticker_a": tickers[i],
+        "ticker_b": tickers[j],
+        "correlation": flat[top].round(4),
     })
 
     for side in ["a", "b"]:

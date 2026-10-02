@@ -3,5 +3,5 @@ pandas
 numpy
 requests
 pyarrow
-streamlit>=1.45
+streamlit>=1.64
 plotly>=5.24

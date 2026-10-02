@@ -305,9 +305,7 @@ if pairs.empty:
     st.info("No pairs match these filters. Try a lower market cap or more sectors.")
     st.stop()
 
-tab_top, tab_lookup, tab_overview = st.tabs(["Top pairs", "Look up a pair", "Overview"])
-
-with tab_top:
+def top_pairs_view() -> None:
     st.caption("Click a row to chart that pair.")
     event = st.dataframe(
         pairs_table(pairs), hide_index=True, height=380, width="stretch",
@@ -325,20 +323,20 @@ with tab_top:
     row = pairs.iloc[rows[0] if rows and rows[0] < len(pairs) else 0]
     pair_detail(data, meta, row["ticker_a"], row["ticker_b"])
 
-with tab_lookup:
+
+def lookup_view() -> None:
     options = meta.sort_values("market_cap", ascending=False).index.tolist()
     label = lambda t: f"{t} · {meta.at[t, 'name']}"
     l1, l2 = st.columns(2)
-    ticker_a = l1.selectbox("Stock A", options, index=options.index("KO") if "KO" in options
-                            else 0, format_func=label)
-    ticker_b = l2.selectbox("Stock B", options, index=options.index("PEP") if "PEP" in options
-                            else 1, format_func=label)
+    ticker_a = l1.selectbox("Stock A", options, format_func=label, key="stock_a")
+    ticker_b = l2.selectbox("Stock B", options, format_func=label, key="stock_b")
     if ticker_a == ticker_b:
         st.info("Pick two different stocks.")
     else:
         pair_detail(data, meta, ticker_a, ticker_b)
 
-with tab_overview:
+
+def overview_view() -> None:
     o1, o2 = st.columns(2)
     with o1:
         show(distribution_chart(result["hist"], pairs["correlation"].min()))
@@ -347,6 +345,20 @@ with tab_overview:
     st.caption("High correlation mostly reflects shared industry exposure, so most top pairs "
                "sit in the same sector (regional banks especially). Share classes of one "
                "company are collapsed before correlating.")
+
+
+# Widgets in a closed tab don't run, so Streamlit would drop their state. Seeding and
+# re-assigning the keys keeps the picked stocks when switching tabs.
+for k, default in [("stock_a", "KO"), ("stock_b", "PEP")]:
+    st.session_state[k] = st.session_state.get(k, default if default in meta.index else
+                                               meta.index[0 if k == "stock_a" else 1])
+
+# Lazy tabs: only the open tab's code runs, which keeps reruns quick on a small host.
+tabs = st.tabs(["Top pairs", "Look up a pair", "Overview"], on_change="rerun", key="view")
+for tab, view in zip(tabs, [top_pairs_view, lookup_view, overview_view]):
+    if tab.open:
+        with tab:
+            view()
 
 st.caption("NYSE and NASDAQ common stocks, adjusted "
            "daily closes from Yahoo Finance. Candidates for research, not trade recommendations.")

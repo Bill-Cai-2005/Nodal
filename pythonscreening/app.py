@@ -229,7 +229,7 @@ def pair_detail(prices: pd.DataFrame, meta: pd.DataFrame, ticker_a: str, ticker_
                 f"{ticker_b} · {meta.at[ticker_b, 'name']}")
     if stats["correlation"] >= REVIEW_THRESHOLD:
         st.warning("Correlation is at or above 0.97. These are usually the same company under "
-                   "two IDs or a pegged merger, not a real pair. Check by hand.", icon="⚠️")
+                   "two IDs or a pegged merger, not a real pair. Check by hand.")
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Correlation", f"{stats['correlation']:.3f}",
@@ -266,7 +266,7 @@ def pairs_table(pairs: pd.DataFrame) -> pd.DataFrame:
         "Sector": np.where(pairs["same_sector"], pairs["sector_a"],
                            pairs["sector_a"] + " / " + pairs["sector_b"]),
         "Same industry": pairs["same_industry"],
-        "Review": np.where(pairs["review_flag"] != "", "⚠ ≥ 0.97", ""),
+        "Review": np.where(pairs["review_flag"] != "", "≥ 0.97", ""),
     })
 
 

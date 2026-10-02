@@ -30,3 +30,9 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.13.0
+      # Keep memory under the free plan's 512MB: one BLAS thread (the matrix
+      # multiply is small) and fewer glibc malloc arenas for Streamlit's threads.
+      - key: OPENBLAS_NUM_THREADS
+        value: "1"
+      - key: MALLOC_ARENA_MAX
+        value: "2"

@@ -36,3 +36,7 @@ services:
         value: "1"
       - key: MALLOC_ARENA_MAX
         value: "2"
+      # Lets the app's "Refresh data" button start the refresh workflow; set it in
+      # the dashboard. See pythonscreening/README.md, Deploying.
+      - key: GITHUB_TOKEN
+        sync: false

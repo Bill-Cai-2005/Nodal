@@ -2,9 +2,9 @@
 Pair screener visualizer.
 
 Interactive front end for pair_correlation.py, embedded in the Nodal site's
-Resources page. Reads the snapshot in data/ (written by the pipeline) and
-recomputes correlations live, so lookback and filters can change without any
-downloads.
+Resources page. Loads the pipeline's snapshot (see github_data.py for where it
+comes from and how a refresh is started) and recomputes correlations live, so
+lookback and filters can change without re-running the pipeline.
 
     streamlit run app.py
 """
@@ -16,7 +16,8 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from pair_correlation import DATA_DIR, REVIEW_THRESHOLD, correlation_matrix, top_pairs
+from github_data import GITHUB_TOKEN, latest_run, read_snapshot, start_refresh
+from pair_correlation import REVIEW_THRESHOLD, correlation_matrix, top_pairs
 
 st.set_page_config(page_title="Pair Screener", layout="wide")
 
@@ -24,6 +25,7 @@ LOOKBACKS = {"3M": 63, "6M": 126, "1Y": 252, "2Y": None}  # trading days; None =
 MIN_CAPS = {"$1B+": 1e9, "$10B+": 1e10, "$50B+": 5e10, "$200B+": 2e11}
 TOP_N = 100
 ROLLING_DAYS = 60
+REFRESH_COOLDOWN = pd.Timedelta(minutes=30)  # ignore repeat clicks right after a refresh
 
 # Chart tokens: series A/B are categorical slots 1-2 (validated on a white surface).
 SERIES_A, SERIES_B = "#2a78d6", "#eb6834"
@@ -40,14 +42,15 @@ SECURITY_SUFFIX = re.compile(
 
 # ---------------------------------------------------------------- data
 
-@st.cache_data
-def load_snapshot() -> tuple[pd.DataFrame, pd.DataFrame]:
-    # float32 halves every matrix the screen builds (needed on a 512MB host);
-    # correlations agree with float64 to ~1e-6.
-    prices = pd.read_parquet(DATA_DIR / "prices.parquet")
-    meta = pd.read_parquet(DATA_DIR / "universe.parquet")
+@st.cache_data(ttl="15m", show_spinner="Loading data…")
+def load_snapshot() -> tuple[pd.DataFrame, pd.DataFrame, pd.Timestamp]:
+    """Returns (prices, meta, loaded_at). Re-checks for newly published data every
+    15 minutes; the refresh panel also clears this as soon as a refresh finishes.
+    Prices stay float32: that halves every matrix the screen builds (needed on a
+    512MB host), and correlations agree with float64 to ~1e-6."""
+    prices, meta, _ = read_snapshot()
     meta["name"] = meta["name"].str.replace(SECURITY_SUFFIX, "", regex=True).str.strip()
-    return prices, meta
+    return prices, meta, pd.Timestamp.now(tz="UTC")
 
 
 def window(prices: pd.DataFrame, lookback: str) -> pd.DataFrame:
@@ -56,10 +59,11 @@ def window(prices: pd.DataFrame, lookback: str) -> pd.DataFrame:
 
 
 @st.cache_data(max_entries=32, show_spinner="Correlating…")
-def screen(lookback: str, min_cap: str, sectors: tuple[str, ...], same_sector_only: bool,
-           hide_flagged: bool) -> dict:
-    """Top pairs plus summary stats. Caches the small results, not the matrix."""
-    prices, meta = load_snapshot()
+def screen(data_version: str, lookback: str, min_cap: str, sectors: tuple[str, ...],
+           same_sector_only: bool, hide_flagged: bool) -> dict:
+    """Top pairs plus summary stats. Caches the small results, not the matrix.
+    data_version keys the cache to the snapshot, so a refresh isn't served stale."""
+    prices, meta, _ = load_snapshot()
     keep = meta[meta["market_cap"] >= MIN_CAPS[min_cap]]
     if sectors:
         keep = keep[keep["sector"].isin(sectors)]
@@ -278,7 +282,8 @@ def pairs_table(pairs: pd.DataFrame) -> pd.DataFrame:
 
 # ---------------------------------------------------------------- page
 
-prices, meta = load_snapshot()
+prices, meta, loaded_at = load_snapshot()
+data_version = f"{prices.index[-1]:%Y-%m-%d}/{prices.shape[1]}"
 
 f1, f2, f3, f4, f5 = st.columns([1.3, 1.1, 2.2, 1.2, 1.1], vertical_alignment="bottom")
 lookback = f1.segmented_control("Lookback", list(LOOKBACKS), default="2Y",
@@ -289,7 +294,8 @@ same_sector_only = f4.toggle("Same sector")
 hide_flagged = f5.toggle("Hide ≥ 0.97", help="Hide pairs flagged as likely duplicates or "
                          "pegged mergers.")
 
-result = screen(lookback, min_cap, tuple(sorted(sectors)), same_sector_only, hide_flagged)
+result = screen(data_version, lookback, min_cap, tuple(sorted(sectors)), same_sector_only,
+                hide_flagged)
 pairs = result["pairs"]
 data = window(prices, lookback)
 
@@ -360,5 +366,88 @@ for tab, view in zip(tabs, [top_pairs_view, lookup_view, overview_view]):
         with tab:
             view()
 
-st.caption("NYSE and NASDAQ common stocks, adjusted "
-           "daily closes from Yahoo Finance. Candidates for research, not trade recommendations.")
+
+
+# ---------------------------------------------------------------- refresh
+
+@st.cache_data(ttl=20, show_spinner=False)
+def refresh_status() -> dict | None:
+    try:
+        return latest_run()
+    except Exception:  # GitHub unreachable or token rejected: just hide the status
+        return None
+
+
+def ago(t: pd.Timestamp) -> str:
+    minutes = int((pd.Timestamp.now(tz="UTC") - t).total_seconds() // 60)
+    return "just now" if minutes < 1 else f"{minutes} min ago" if minutes < 120 \
+        else f"{minutes // 60} hours ago"
+
+
+def refresh_state() -> tuple[dict | None, bool]:
+    """(latest run, whether a refresh is in progress)."""
+    run = refresh_status()
+    requested = st.session_state.get("refresh_requested")
+    # GitHub queues a dispatched run a few seconds after the request, so count a
+    # click as in progress until a run started after it shows up.
+    pending = requested is not None and (run is None or run["started"] < requested) \
+        and pd.Timestamp.now(tz="UTC") - requested < pd.Timedelta(minutes=2)
+    return run, pending or (run is not None and run["active"])
+
+
+def refresh_panel() -> None:
+    _, was_active = refresh_state()
+
+    # While a refresh runs, re-poll every 20s; when it finishes, rerun the whole page
+    # so the new data (and this panel's idle state) take effect.
+    @st.fragment(run_every="20s" if was_active else None)
+    def panel() -> None:
+        if was_active:
+            refresh_status.clear()
+        run, active = refresh_state()
+        if run and run["succeeded"] and run["finished"] > loaded_at:
+            load_snapshot.clear()
+            st.session_state.pop("refresh_requested", None)
+            st.rerun()
+        if active != was_active:
+            st.rerun()
+
+        left, right = st.columns([4, 1], vertical_alignment="center")
+        if active:
+            running = run is not None and run["active"]
+            left.caption("Refreshing data from Yahoo Finance"
+                         + (f", started {ago(run['started'])}" if running else "")
+                         + ". This takes about 5 to 10 minutes; the new data loads here "
+                         "automatically when it's done."
+                         + (f" [View progress]({run['url']})" if running else ""))
+            right.button("Refreshing…", disabled=True, width="stretch")
+            return
+
+        note = f"Data through {prices.index[-1]:%b %d, %Y}; updates every weekday evening."
+        if run and run["failed"]:
+            note += f" The last refresh failed ([log]({run['url']})), so this is the previous data."
+        left.caption(note)
+        recent = run is not None and run["succeeded"] and \
+            pd.Timestamp.now(tz="UTC") - run["finished"] < REFRESH_COOLDOWN
+        if right.button("Refresh data", width="stretch", disabled=recent,
+                        help=f"Refreshed {ago(run['finished'])}." if recent else
+                        "Download the latest prices and re-run the screen."):
+            try:
+                start_refresh()
+            except Exception as e:
+                st.error(f"Couldn't start the refresh: {e}")
+                return
+            st.session_state["refresh_requested"] = pd.Timestamp.now(tz="UTC")
+            refresh_status.clear()
+            st.rerun()
+
+    panel()
+
+
+st.divider()
+if GITHUB_TOKEN:
+    refresh_panel()
+else:
+    st.caption(f"Data through {prices.index[-1]:%b %d, %Y}; updates every weekday evening.")
+st.caption("NYSE and NASDAQ common stocks, adjusted daily closes from Yahoo Finance. "
+           "Candidates for research, not trade recommendations.")

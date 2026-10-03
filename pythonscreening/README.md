@@ -29,15 +29,34 @@ Each pair gets indexed prices, the spread's z-score, a 60-day rolling
 correlation and a returns scatter, plus hedge ratio and mean-reversion
 half-life.
 
-The app reads a snapshot in `data/` (cleaned, deduped prices and company info,
-about 6MB) and recomputes correlations on the fly. It never downloads anything,
-so it loads fast and works on a free host. **The snapshot is committed, so to
-update the data, run the pipeline and commit `data/`:**
+The app works from a snapshot of the pipeline's cleaned, deduped prices and
+company info (about 6MB) and recomputes correlations on the fly, so it loads
+fast and works on a free host.
 
-```bash
-python pair_correlation.py --refresh
-git add data && git commit -m "Refresh pair screener data"
-```
+### Keeping the data fresh
+
+The **Refresh pair data** GitHub Actions workflow
+(`.github/workflows/refresh-pair-data.yml`) runs `pair_correlation.py --refresh`
+and publishes the snapshot as files on the `pair-data` GitHub release. It runs:
+
+- **Automatically** every weekday evening, after the US market close.
+- **From the app**, when someone clicks **Refresh data** at the bottom of the
+  page. The button shows progress, and the new data loads by itself when the run
+  finishes, after about 5 to 10 minutes. It's disabled for 30 minutes after a
+  refresh.
+- **From GitHub**: Actions → Refresh pair data → Run workflow.
+
+The app checks the release for new data every 15 minutes. If it can't reach the
+release, for example before the workflow has ever run, it uses the snapshot
+committed in `data/` instead. That copy only changes when someone commits it.
+
+If Yahoo throttles the download, the workflow won't publish a snapshot with
+fewer than 2,000 companies; the app keeps the previous data and says the last
+refresh failed, with a link to the log.
+
+The **Refresh data** button only appears when the app has a `GITHUB_TOKEN` that
+can start the workflow (see Deploying). Without one, everything else, including
+the automatic daily refresh, still works.
 
 ### Running the site with the screener locally
 
@@ -60,6 +79,12 @@ In dev the tab loads `http://localhost:8501` automatically.
    Nodal theme) gets picked up.
 2. On Vercel, set `VITE_PAIR_SCREENER_URL` to the app's URL and redeploy.
    Without it, the tab shows a "not configured" message instead of the app.
+3. For the **Refresh data** button, add a `GITHUB_TOKEN` environment variable
+   on the Render service: a GitHub token that can run Actions on this repo. The
+   narrowest is a fine-grained token made by the repo owner, limited to this
+   repo, with **Actions: Read and write**. A collaborator can instead use a
+   classic token with the `repo` scope, which gives access to all of their
+   repos.
 
 Render's free plan sleeps after inactivity, so the first visit after a while
 takes up to a minute while the tab shows a loading message.

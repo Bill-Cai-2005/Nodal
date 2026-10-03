@@ -1,0 +1,61 @@
+# Refreshes the Pair Screener's data and publishes it as assets on the "pair-data"
+# release, where the Streamlit app (pythonscreening/app.py) loads it from. Release
+# assets are replaced in place, so daily refreshes don't grow the repo.
+name: Refresh pair data
+
+on:
+  schedule:
+    # 01:00 UTC Tue-Sat = evening in New York after each weekday's close. The
+    # pipeline stops at the last completed day, so this picks up that day's close.
+    - cron: "0 1 * * 2-6"
+  workflow_dispatch: # "Run workflow" button, and the app's "Refresh data" button
+
+concurrency:
+  group: refresh-pair-data
+  cancel-in-progress: false
+
+permissions:
+  contents: write # create the release and replace its assets
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: pythonscreening
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      # Only the pipeline's packages; the app's (streamlit, plotly) aren't needed here.
+      - run: pip install yfinance pandas numpy requests pyarrow
+
+      - name: Run pipeline
+        env:
+          SEC_USER_AGENT: ${{ vars.SEC_USER_AGENT || 'NodalResearch research@example.com' }}
+        run: python pair_correlation.py --refresh
+
+      # Don't publish a broken snapshot if Yahoo throttled most of the download.
+      - name: Check snapshot
+        run: |
+          python - <<'EOF'
+          import pandas as pd
+          prices = pd.read_parquet("data/prices.parquet")
+          age = (pd.Timestamp.today().normalize() - prices.index[-1]).days
+          print(f"{prices.shape[1]} companies, {len(prices)} days, last {prices.index[-1]:%Y-%m-%d}")
+          assert prices.shape[1] >= 2000, "too few companies; download likely throttled"
+          assert age <= 7, f"last trading day is {age} days old"
+          EOF
+
+      - name: Publish to the pair-data release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view pair-data >/dev/null 2>&1 || gh release create pair-data \
+            --title "Pair Screener data" --latest=false \
+            --notes "Updated automatically by the Refresh pair data workflow. Don't delete: the Pair Screener loads its data from these files."
+          gh release upload pair-data data/prices.parquet data/universe.parquet --clobber

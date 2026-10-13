@@ -143,3 +143,115 @@ test("removes both directions from the database", async () => {
     ],
   );
 });
+
+test("lets browsers send the admin header and PATCH across origins", async () => {
+  const response = await request(app)
+    .options("/api/connections/nodes/AAPL")
+    .set("Origin", "https://nodalresearch.com")
+    .set("Access-Control-Request-Method", "PATCH")
+    .set("Access-Control-Request-Headers", "content-type,x-admin-password")
+    .expect(204);
+
+  assert.match(response.headers["access-control-allow-headers"], /x-admin-password/i);
+  assert.match(response.headers["access-control-allow-methods"], /PATCH/);
+});
+
+test("places a ticker on the map and moves it", async () => {
+  await request(app)
+    .patch("/api/connections/nodes/nvda")
+    .set("x-admin-password", "test-admin-password")
+    .send({ position: { x: 120, y: -40 } })
+    .expect(200);
+  const moved = await request(app)
+    .patch("/api/connections/nodes/NVDA")
+    .set("x-admin-password", "test-admin-password")
+    .send({ position: { x: 300.5, y: 80 } })
+    .expect(200);
+
+  assert.equal(moved.body.node.ticker, "NVDA");
+  assert.deepEqual(moved.body.node.position, { x: 300.5, y: 80 });
+  assert.deepEqual(moved.body.node.connectedTickers, []);
+  assert.equal(await StockConnection.countDocuments(), 1);
+
+  const readResponse = await request(app).get("/api/connections").expect(200);
+  assert.deepEqual(readResponse.body.nodes[0].position, { x: 300.5, y: 80 });
+});
+
+test("keeps an existing ticker's connections when it is moved", async () => {
+  await request(app)
+    .post("/api/connections")
+    .set("x-admin-password", "test-admin-password")
+    .send({ sourceTicker: "AAPL", targetTicker: "MSFT" })
+    .expect(201);
+  await request(app)
+    .patch("/api/connections/nodes/AAPL")
+    .set("x-admin-password", "test-admin-password")
+    .send({ position: { x: 1, y: 2 } })
+    .expect(200);
+
+  const node = await StockConnection.findOne({ ticker: "AAPL" }).lean<{
+    connectedTickers: string[];
+    position: { x: number; y: number } | null;
+  }>();
+  assert.deepEqual(node?.connectedTickers, ["MSFT"]);
+  assert.deepEqual(node?.position, { x: 1, y: 2 });
+});
+
+test("rejects unauthorized or invalid placements", async () => {
+  await request(app)
+    .patch("/api/connections/nodes/AAPL")
+    .send({ position: { x: 1, y: 2 } })
+    .expect(401);
+  await request(app)
+    .patch("/api/connections/nodes/AAPL")
+    .set("x-admin-password", "test-admin-password")
+    .send({ position: { x: "1", y: 2 } })
+    .expect(400);
+  await request(app)
+    .patch("/api/connections/nodes/BAD!")
+    .set("x-admin-password", "test-admin-password")
+    .send({ position: { x: 1, y: 2 } })
+    .expect(400);
+  assert.equal(await StockConnection.countDocuments(), 0);
+});
+
+test("removing a ticker from the map clears its connections on both sides", async () => {
+  for (const targetTicker of ["MSFT", "NVDA"]) {
+    await request(app)
+      .post("/api/connections")
+      .set("x-admin-password", "test-admin-password")
+      .send({ sourceTicker: "AAPL", targetTicker })
+      .expect(201);
+  }
+  await request(app)
+    .post("/api/connections")
+    .set("x-admin-password", "test-admin-password")
+    .send({ sourceTicker: "MSFT", targetTicker: "NVDA" })
+    .expect(201);
+  await request(app)
+    .patch("/api/connections/nodes/AAPL")
+    .set("x-admin-password", "test-admin-password")
+    .send({ position: { x: 1, y: 2 } })
+    .expect(200);
+
+  await request(app)
+    .delete("/api/connections/nodes/aapl")
+    .set("x-admin-password", "test-admin-password")
+    .expect(204);
+
+  assert.deepEqual(
+    await StockConnection.find({}, { _id: 0, ticker: 1, connectedTickers: 1, position: 1 })
+      .sort({ ticker: 1 })
+      .lean(),
+    [
+      { ticker: "AAPL", connectedTickers: [], position: null },
+      { ticker: "MSFT", connectedTickers: ["NVDA"], position: null },
+      { ticker: "NVDA", connectedTickers: ["MSFT"], position: null },
+    ],
+  );
+
+  await request(app)
+    .delete("/api/connections/nodes/TSLA")
+    .set("x-admin-password", "test-admin-password")
+    .expect(404);
+});

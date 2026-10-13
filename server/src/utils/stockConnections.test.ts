@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   groupConnectionPairs,
   normalizePair,
+  normalizePosition,
   normalizeTicker,
 } from "./stockConnections.js";
 
@@ -20,6 +21,18 @@ test("accepts valid distinct ticker pairs and rejects invalid pairs", () => {
   assert.equal(normalizePair("AAPL", "aapl"), null);
   assert.equal(normalizePair("AAPL!", "MSFT"), null);
   assert.equal(normalizePair("AAPL", "this-ticker-is-too-long"), null);
+  assert.deepEqual(normalizePair("005930:xkrx", "BRK.B"), {
+    sourceTicker: "005930:XKRX",
+    targetTicker: "BRK.B",
+  });
+});
+
+test("accepts finite map positions and rejects anything else", () => {
+  assert.deepEqual(normalizePosition({ x: 10.126, y: -4 }), { x: 10.13, y: -4 });
+  assert.equal(normalizePosition(null), null);
+  assert.equal(normalizePosition({ x: "10", y: 4 }), null);
+  assert.equal(normalizePosition({ x: Number.NaN, y: 4 }), null);
+  assert.equal(normalizePosition({ x: 5_000_000, y: 4 }), null);
 });
 
 test("groups legacy pairs into a bidirectional ticker graph", () => {

@@ -1,4 +1,6 @@
-export const TICKER_PATTERN = /^[A-Z0-9][A-Z0-9.-]{0,9}$/;
+// Allows ":" for exchange-suffixed tickers such as 005930:XKRX.
+export const TICKER_PATTERN = /^[A-Z0-9][A-Z0-9.:-]{0,14}$/;
+const MAX_COORDINATE = 1_000_000;
 
 export interface LegacyConnectionPair {
   sourceTicker?: unknown;
@@ -8,6 +10,11 @@ export interface LegacyConnectionPair {
 export interface NormalizedConnectionPair {
   sourceTicker: string;
   targetTicker: string;
+}
+
+export interface MapPosition {
+  x: number;
+  y: number;
 }
 
 export interface GroupedStockConnection {
@@ -35,6 +42,22 @@ export function normalizePair(
   }
 
   return { sourceTicker, targetTicker };
+}
+
+export function normalizePosition(value: unknown): MapPosition | null {
+  if (!value || typeof value !== "object") return null;
+  const { x, y } = value as { x?: unknown; y?: unknown };
+  if (
+    typeof x !== "number" ||
+    typeof y !== "number" ||
+    !Number.isFinite(x) ||
+    !Number.isFinite(y) ||
+    Math.abs(x) > MAX_COORDINATE ||
+    Math.abs(y) > MAX_COORDINATE
+  ) {
+    return null;
+  }
+  return { x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100 };
 }
 
 export function groupConnectionPairs(

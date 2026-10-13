@@ -1,9 +1,16 @@
 import { getApiEndpoint } from "./api";
 
+export interface MapPosition {
+  x: number;
+  y: number;
+}
+
 export interface StockConnectionNode {
   _id: string;
   ticker: string;
   connectedTickers: string[];
+  // null while the ticker is in the inventory rather than on the map.
+  position: MapPosition | null;
   createdAt: string;
 }
 
@@ -59,5 +66,40 @@ export async function deleteStockConnection(
     },
     body: JSON.stringify({ sourceTicker, targetTicker }),
   });
+  if (!response.ok) throw new Error(await readError(response));
+}
+
+export async function placeStockConnectionNode(
+  ticker: string,
+  position: MapPosition,
+  adminPassword: string,
+): Promise<StockConnectionNode> {
+  const response = await fetch(
+    getApiEndpoint(`/api/connections/nodes/${encodeURIComponent(ticker)}`),
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "x-admin-password": adminPassword,
+      },
+      body: JSON.stringify({ position }),
+    },
+  );
+  if (!response.ok) throw new Error(await readError(response));
+  const payload = (await response.json()) as { node: StockConnectionNode };
+  return payload.node;
+}
+
+export async function removeStockConnectionNode(
+  ticker: string,
+  adminPassword: string,
+): Promise<void> {
+  const response = await fetch(
+    getApiEndpoint(`/api/connections/nodes/${encodeURIComponent(ticker)}`),
+    {
+      method: "DELETE",
+      headers: { "x-admin-password": adminPassword },
+    },
+  );
   if (!response.ok) throw new Error(await readError(response));
 }

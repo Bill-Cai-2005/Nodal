@@ -3,8 +3,10 @@ import connectDB from "../utils/connectDB.js";
 import StockConnection from "../models/StockConnection.js";
 import { authorizeAdminPassword } from "../utils/adminAuth.js";
 import {
+  TICKER_PATTERN,
   groupConnectionPairs,
   normalizePair,
+  normalizePosition,
   normalizeTicker,
 } from "../utils/stockConnections.js";
 
@@ -72,7 +74,7 @@ router.get("/", async (_req: Request, res: Response) => {
     await migrateLegacyConnections();
     const nodes = await StockConnection.find(
       {},
-      { _id: 1, ticker: 1, connectedTickers: 1, createdAt: 1 },
+      { _id: 1, ticker: 1, connectedTickers: 1, position: 1, createdAt: 1 },
     )
       .sort({ ticker: 1 })
       .lean();
@@ -150,6 +152,71 @@ router.delete("/", async (req: Request, res: Response) => {
   } catch (error) {
     console.error("Error deleting stock connection:", error);
     return res.status(500).json({ error: "Failed to delete stock connection" });
+  }
+});
+
+// PATCH /api/connections/nodes/:ticker - Admin-only placement of a ticker on the map.
+router.patch("/nodes/:ticker", async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
+
+  const ticker = normalizeTicker(req.params.ticker);
+  if (!TICKER_PATTERN.test(ticker)) {
+    return res.status(400).json({ error: "ticker must be a valid stock ticker" });
+  }
+  const position = normalizePosition(req.body?.position);
+  if (!position) {
+    return res
+      .status(400)
+      .json({ error: "position must include finite numeric x and y values" });
+  }
+
+  try {
+    await connectDB();
+    await migrateLegacyConnections();
+    const node = await StockConnection.findOneAndUpdate(
+      { ticker },
+      { $set: { position } },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    ).lean();
+    return res.json({ node });
+  } catch (error) {
+    console.error("Error placing stock connection node:", error);
+    return res.status(500).json({ error: "Failed to save ticker position" });
+  }
+});
+
+// DELETE /api/connections/nodes/:ticker - Admin-only removal of a ticker from the map.
+// The ticker returns to the inventory and all of its connections are removed.
+router.delete("/nodes/:ticker", async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
+
+  const ticker = normalizeTicker(req.params.ticker);
+  if (!TICKER_PATTERN.test(ticker)) {
+    return res.status(400).json({ error: "ticker must be a valid stock ticker" });
+  }
+
+  try {
+    await connectDB();
+    await migrateLegacyConnections();
+    const node = await StockConnection.findOne({ ticker }).lean<{
+      connectedTickers: string[];
+    }>();
+    if (!node) {
+      return res.status(404).json({ error: "Ticker is not on the map" });
+    }
+
+    await StockConnection.updateMany(
+      { ticker: { $in: node.connectedTickers } },
+      { $pull: { connectedTickers: ticker } },
+    );
+    await StockConnection.updateOne(
+      { ticker },
+      { $set: { position: null, connectedTickers: [] } },
+    );
+    return res.status(204).send();
+  } catch (error) {
+    console.error("Error removing stock connection node:", error);
+    return res.status(500).json({ error: "Failed to remove ticker from the map" });
   }
 });
 

@@ -7,6 +7,7 @@ import UniversalWatchlist from "../components/NodalWatchlist/UniversalWatchlist"
 import CustomWatchlists from "../components/NodalWatchlist/CustomWatchlists";
 import AiBuildoutWatchlist from "../components/NodalWatchlist/AiBuildoutWatchlist";
 import PairScreener from "../components/NodalWatchlist/PairScreener";
+import MoneyFlowMap from "../components/MoneyFlow/MoneyFlowMap";
 import { verifyToolPassword } from "../utils/adminApi";
 import {
   RESOURCE_TAB_AI_BUILDOUT,
@@ -18,12 +19,15 @@ import {
 } from "../utils/watchlistCacheApi";
 
 const RESOURCE_TAB_PAIR_SCREENER = "pair-screener";
+const RESOURCE_TAB_MONEY_FLOW = "money-flow";
 
 const NodalWatchlist = () => {
   const navigate = useNavigate();
   const responsivePaddingTop = useResponsivePadding();
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
+  // Kept in memory (never stored) so admin edits can authenticate with the server.
+  const [unlockedPassword, setUnlockedPassword] = useState("");
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [unlocking, setUnlocking] = useState(false);
   const [activeTab, setActiveTab] = useState<string>(RESOURCE_TAB_WATCHLIST);
@@ -50,6 +54,7 @@ const NodalWatchlist = () => {
         return;
       }
       setIsAdmin(true);
+      setUnlockedPassword(password);
       setAdminPassword("");
       setPasswordError(null);
     } catch (e: any) {
@@ -154,6 +159,12 @@ const NodalWatchlist = () => {
             AI Buildout
           </button>
           <button
+            onClick={() => setActiveTab(RESOURCE_TAB_MONEY_FLOW)}
+            style={getTabStyle(RESOURCE_TAB_MONEY_FLOW)}
+          >
+            Money Flow
+          </button>
+          <button
             onClick={() => setActiveTab(RESOURCE_TAB_AI_APPLICATIONS)}
             style={getTabStyle(RESOURCE_TAB_AI_APPLICATIONS)}
           >
@@ -182,6 +193,8 @@ const NodalWatchlist = () => {
             watchlistName={AI_APPLICATIONS_WATCHLIST_NAME}
             defaultDescription={AI_APPLICATIONS_DESCRIPTION}
           />
+        ) : activeTab === RESOURCE_TAB_MONEY_FLOW ? (
+          <MoneyFlowMap isAdmin={isAdmin} adminPassword={unlockedPassword} />
         ) : activeTab === RESOURCE_TAB_PAIR_SCREENER ? (
           <PairScreener />
         ) : (

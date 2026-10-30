@@ -12,6 +12,7 @@ import {
   formatPercentChange,
   percentChangeColor,
 } from "../../utils/watchlistUtils";
+import TickerNews from "./TickerNews";
 
 type RowData = StockData & {
   Description?: string;
@@ -485,6 +486,7 @@ const AiBuildoutTable = ({
                           </div>
                         </div>
                       )}
+                      {!row.isManual && <TickerNews ticker={ticker} />}
                     </td>
                   </tr>
                 )}

@@ -7,6 +7,8 @@ const router = express.Router();
 const POLYGON_BASE_URL = "https://api.polygon.io";
 const DAYS = 14; // how far back "latest news" may reach
 const CACHE_MS = 10 * 60 * 1000;
+const PAGE_LIMIT = 1000; // Massive's maximum, same as news_spike.py
+const MAX_PAGES = 10; // safety stop; one page covers 14 days for almost every ticker
 
 type MassiveArticle = {
   title?: string;
@@ -30,6 +32,14 @@ const namePatterns: Record<string, RegExp[]> = Object.fromEntries(
 );
 const isOurTicker = (ticker: string) => Object.hasOwn(NAMES, ticker);
 const alias = (ticker: string) => (Object.hasOwn(ALIASES, ticker) ? ALIASES[ticker] : ticker);
+
+// Massive's next_url leaves out the key. Only add it to links back to Massive itself.
+const withKey = (link: string, apiKey: string) => {
+  const url = new URL(link);
+  if (url.origin !== POLYGON_BASE_URL) return null;
+  url.searchParams.set("apiKey", apiKey);
+  return url.toString();
+};
 
 // GET /api/news/:ticker -> the newest article from the last 14 days that passes the rules.
 router.get("/:ticker", async (req: Request, res: Response) => {
@@ -55,27 +65,34 @@ router.get("/:ticker", async (req: Request, res: Response) => {
     url.searchParams.set("published_utc.gte", since);
     url.searchParams.set("order", "desc");
     url.searchParams.set("sort", "published_utc");
-    url.searchParams.set("limit", "100");
+    url.searchParams.set("limit", String(PAGE_LIMIT));
     url.searchParams.set("apiKey", apiKey);
 
-    const upstream = await fetch(url.toString(), { method: "GET" });
-    if (!upstream.ok) {
-      const text = await upstream.text();
-      console.error("Massive news error:", upstream.status, text);
-      return res.status(upstream.status).json({
-        error: "Polygon API error",
-        status: upstream.status,
-        body: text,
-      });
+    // Follow next_url until the whole 14 days is in, like news_spike.py's fetch().
+    const articles: MassiveArticle[] = [];
+    let next: string | null = url.toString();
+    for (let page = 0; next && page < MAX_PAGES; page += 1) {
+      const upstream = await fetch(next, { method: "GET" });
+      if (!upstream.ok) {
+        const text = await upstream.text();
+        console.error("Massive news error:", upstream.status, text);
+        return res.status(upstream.status).json({
+          error: "Polygon API error",
+          status: upstream.status,
+          body: text,
+        });
+      }
+      const data = (await upstream.json()) as { results?: MassiveArticle[]; next_url?: string };
+      articles.push(...(data.results ?? []));
+      next = data.next_url ? withKey(data.next_url, apiKey) : null;
     }
 
-    const data = (await upstream.json()) as { results?: MassiveArticle[] };
     const ownPatterns = namePatterns[ticker] ?? compileNames([], ticker);
     const result: NewsResult = { ticker, pick: null, checked: 0 };
 
     // Same steps as news_spike.py's analyze(), for this one ticker. Results arrive newest
     // first, so the first article that passes is the pick.
-    for (const article of data.results ?? []) {
+    for (const article of articles) {
       const tagged = dedupe((article.tickers ?? []).map(alias));
       if (!tagged.includes(ticker)) continue;
       result.checked += 1;

@@ -1,0 +1,3 @@
+# Downloaded SEC filings, Massive news and generated results: rebuild with edgar_spike.py
+data/
+out/

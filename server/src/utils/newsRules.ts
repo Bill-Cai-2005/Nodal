@@ -86,7 +86,7 @@ export const NAMES: Record<string, string[]> = {
 //   2. test 1 "about the company": its name is in the headline (or it is the only ticker)
 //   3. tests 2+3 "something material happened": the headline names one of the event types
 // ---------------------------------------------------------------------------------------
-const rx = (...parts: string[]) => new RegExp(parts.join("|"), "i");
+export const rx = (...parts: string[]) => new RegExp(parts.join("|"), "i");
 
 // "X beats estimates" is real earnings news, so it is exempt from the rating/opinion rules.
 export const EARNINGS_BEAT = rx(String.raw`\b(beats?|tops?|miss(es)?|exceeds?|surpass(es)?|falls? short of|lags?)\b`

@@ -6,6 +6,8 @@ export type TickerNewsPick = {
   publisher: string;
   published_utc: string;
   event: string;
+  // "sec": an 8-K or 6-K filing; publisher is then the form, e.g. "8-K".
+  source: "news" | "sec";
 };
 
 export type TickerNewsResponse = {

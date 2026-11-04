@@ -1,5 +1,6 @@
 import express, { Request, Response } from "express";
 import fetch from "node-fetch";
+import { listFilings, newestFiling } from "../utils/edgar.js";
 import { ALIASES, NAMES, classify, compileNames, dedupe, normalizeTitle } from "../utils/newsRules.js";
 
 const router = express.Router();
@@ -18,9 +19,17 @@ type MassiveArticle = {
   publisher?: { name?: string };
 };
 
+// source "sec": an 8-K or 6-K. Its publisher is the form and published_utc is when the SEC accepted it.
 type NewsResult = {
   ticker: string;
-  pick: { title: string; url: string; publisher: string; published_utc: string; event: string } | null;
+  pick: {
+    title: string;
+    url: string;
+    publisher: string;
+    published_utc: string;
+    event: string;
+    source: "news" | "sec";
+  } | null;
   checked: number;
 };
 
@@ -41,7 +50,7 @@ const withKey = (link: string, apiKey: string) => {
   return url.toString();
 };
 
-// GET /api/news/:ticker -> the newest article from the last 14 days that passes the rules.
+// GET /api/news/:ticker -> the newest article or SEC filing from the last 14 days that passes the rules.
 router.get("/:ticker", async (req: Request, res: Response) => {
   try {
     const ticker = alias(String(req.params.ticker || "").trim().toUpperCase());
@@ -59,7 +68,12 @@ router.get("/:ticker", async (req: Request, res: Response) => {
       return res.status(500).json({ error: "POLYGON_API_KEY is not configured on the server" });
     }
 
-    const since = new Date(Date.now() - DAYS * 24 * 60 * 60 * 1000).toISOString().replace(/\.\d{3}Z$/, "Z");
+    const sinceDate = new Date(Date.now() - DAYS * 24 * 60 * 60 * 1000);
+    const since = sinceDate.toISOString().replace(/\.\d{3}Z$/, "Z");
+    // Start reading the company's SEC filing list while Massive answers.
+    const listed = listFilings(ticker);
+    listed.catch(() => {}); // reported below, once the news is in
+
     const url = new URL(`${POLYGON_BASE_URL}/v2/reference/news`);
     url.searchParams.set("ticker", ticker);
     url.searchParams.set("published_utc.gte", since);
@@ -110,8 +124,27 @@ router.get("/:ticker", async (req: Request, res: Response) => {
           publisher,
           published_utc: article.published_utc ?? "",
           event,
+          source: "news",
         };
       }
+    }
+
+    // An 8-K or 6-K that passes the filing rules (filingRules.ts) wins if it is newer than the article.
+    try {
+      const newerThan = result.pick ? new Date(result.pick.published_utc) : null;
+      const filing = await newestFiling(await listed, sinceDate, newerThan);
+      if (filing) {
+        result.pick = {
+          title: filing.title,
+          url: filing.url,
+          publisher: filing.form,
+          published_utc: filing.accepted_utc,
+          event: filing.event,
+          source: "sec",
+        };
+      }
+    } catch (error: any) {
+      console.error("SEC filings error:", error.message); // the news pick still stands
     }
 
     cache.set(ticker, { expiresAt: Date.now() + CACHE_MS, result });

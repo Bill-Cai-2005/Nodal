@@ -111,7 +111,8 @@ const TickerNews = ({ ticker }: Props) => {
                 marginTop: "0.25rem",
               }}
             >
-              {pick.publisher} · {formatEasternTime(pick.published_utc)}
+              {pick.source === "sec" ? `SEC filing · ${pick.publisher}` : pick.publisher} ·{" "}
+              {formatEasternTime(pick.published_utc)}
             </div>
           </div>
         </div>

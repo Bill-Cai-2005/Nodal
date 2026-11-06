@@ -7,6 +7,7 @@ import UniversalWatchlist from "../components/NodalWatchlist/UniversalWatchlist"
 import CustomWatchlists from "../components/NodalWatchlist/CustomWatchlists";
 import AiBuildoutWatchlist from "../components/NodalWatchlist/AiBuildoutWatchlist";
 import PairScreener from "../components/NodalWatchlist/PairScreener";
+import NewsFeed from "../components/NodalWatchlist/NewsFeed";
 import MoneyFlowMap from "../components/MoneyFlow/MoneyFlowMap";
 import { verifyToolPassword } from "../utils/adminApi";
 import {
@@ -20,6 +21,7 @@ import {
 
 const RESOURCE_TAB_PAIR_SCREENER = "pair-screener";
 const RESOURCE_TAB_MONEY_FLOW = "money-flow";
+const RESOURCE_TAB_NEWS = "news";
 
 const NodalWatchlist = () => {
   const navigate = useNavigate();
@@ -176,6 +178,12 @@ const NodalWatchlist = () => {
           >
             Pair Screener
           </button>
+          <button
+            onClick={() => setActiveTab(RESOURCE_TAB_NEWS)}
+            style={getTabStyle(RESOURCE_TAB_NEWS)}
+          >
+            News
+          </button>
         </div>
 
         {activeTab === "universal" && isAdmin ? (
@@ -197,6 +205,8 @@ const NodalWatchlist = () => {
           <MoneyFlowMap isAdmin={isAdmin} adminPassword={unlockedPassword} />
         ) : activeTab === RESOURCE_TAB_PAIR_SCREENER ? (
           <PairScreener />
+        ) : activeTab === RESOURCE_TAB_NEWS ? (
+          <NewsFeed />
         ) : (
           <CustomWatchlists
             key={activeTab}

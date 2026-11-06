@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc --pretty false",
-    "test": "set NODE_ENV=test&& tsx --test src/utils/stockConnections.test.ts src/utils/stockConnections.integration.test.ts",
+    "test": "set NODE_ENV=test&& tsx --test src/utils/stockConnections.test.ts src/utils/stockConnections.integration.test.ts src/routes/polygonProxy.test.ts",
     "postbuild": "node -e \"console.log('build:tsc finished')\"",
     "start": "node dist/index.js"
   },

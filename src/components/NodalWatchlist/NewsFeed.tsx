@@ -99,6 +99,14 @@ const NewsFeed = () => {
     return () => window.clearInterval(timer);
   }, []);
 
+  // Re-checks the feed every 5 minutes while the News tab is open and the browser tab is in view.
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") void load();
+    }, 5 * 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
   const days = feed?.days ?? 3;
 
   return (

@@ -58,7 +58,7 @@ const formatEasternTime = (iso: string) => {
   return `${formatted} ET`;
 };
 
-// "Updated 4 min ago", measured from when the server fetched the news (it caches for 10 min).
+// "Updated 4 min ago", measured from the server news job's last successful read of Massive.
 const formatUpdated = (fetchedAt: string, now: number) => {
   const minutes = Math.floor((now - new Date(fetchedAt).getTime()) / 60000);
   if (Number.isNaN(minutes)) return "";

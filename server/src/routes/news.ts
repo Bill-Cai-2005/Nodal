@@ -1,54 +1,43 @@
 import express, { Request, Response } from "express";
-import fetch from "node-fetch";
-import { listFilings, newestFiling } from "../utils/edgar.js";
-import { ALIASES, NAMES, classify, compileNames, dedupe, normalizeTitle } from "../utils/newsRules.js";
+import connectDB from "../utils/connectDB.js";
+import { OUR_TICKERS, alias, isOurTicker, storeStatus, tickerPicks } from "../utils/newsStore.js";
 
 const router = express.Router();
 
-const POLYGON_BASE_URL = "https://api.polygon.io";
-const DAYS = 14; // how far back "latest news" may reach
-const CACHE_MS = 10 * 60 * 1000;
-const PAGE_LIMIT = 1000; // Massive's maximum, same as news_spike.py
-const MAX_PAGES = 10; // safety stop; one page covers 14 days for almost every ticker
+// News comes from the database, which the scheduled news job (src/jobs/ingestNews.ts) fills.
+// These routes never call Massive or the SEC. Besides the pick, each answer says how fresh it is:
+//   fetched_at          when the job last read Massive news successfully
+//   filings_checked_at  when the job last read SEC filings successfully
+//   status              "ok"; "stale" if either is over 3 hours old (the job may be failing, so a
+//                       newer story may be missing); "not_tracked" for a ticker outside our list
+// If the job has never finished, the answer is a 503 with status "empty", never a silent live fetch.
 
-type MassiveArticle = {
-  title?: string;
-  article_url?: string;
-  published_utc?: string;
-  tickers?: string[];
-  publisher?: { name?: string };
-};
+async function freshness(res: Response) {
+  await connectDB();
+  const status = await storeStatus();
+  if (status.empty) {
+    res.status(503).json({ error: "News hasn't been collected yet (the scheduled news job hasn't run)", status: "empty" });
+    return null;
+  }
+  return {
+    fetched_at: status.fetched_at,
+    filings_checked_at: status.filings_checked_at,
+    status: status.newsStale || status.filingsStale ? "stale" : "ok",
+  };
+}
 
-// source "sec": an 8-K or 6-K. Its publisher is the form and published_utc is when the SEC accepted it.
-type NewsResult = {
-  ticker: string;
-  pick: {
-    title: string;
-    url: string;
-    publisher: string;
-    published_utc: string;
-    event: string;
-    source: "news" | "sec";
-  } | null;
-  checked: number;
-};
-
-const cache = new Map<string, { expiresAt: number; result: NewsResult }>();
-
-// Name patterns for every ticker in NAMES ("our tickers"), compiled once.
-const namePatterns: Record<string, RegExp[]> = Object.fromEntries(
-  Object.entries(NAMES).map(([ticker, names]) => [ticker, compileNames(names, ticker)]),
-);
-const isOurTicker = (ticker: string) => Object.hasOwn(NAMES, ticker);
-const alias = (ticker: string) => (Object.hasOwn(ALIASES, ticker) ? ALIASES[ticker] : ticker);
-
-// Massive's next_url leaves out the key. Only add it to links back to Massive itself.
-const withKey = (link: string, apiKey: string) => {
-  const url = new URL(link);
-  if (url.origin !== POLYGON_BASE_URL) return null;
-  url.searchParams.set("apiKey", apiKey);
-  return url.toString();
-};
+// GET /api/news -> every tracked ticker's latest pick, so a page can load them all in one request.
+router.get("/", async (_req: Request, res: Response) => {
+  try {
+    const fresh = await freshness(res);
+    if (!fresh) return;
+    const tickers = Object.fromEntries((await tickerPicks(OUR_TICKERS)).map((news) => [news.ticker, news]));
+    return res.json({ ...fresh, tickers });
+  } catch (error: any) {
+    console.error("Error in news route:", error);
+    return res.status(500).json({ error: error.message || "News lookup failed" });
+  }
+});
 
 // GET /api/news/:ticker -> the newest article or SEC filing from the last 14 days that passes the rules.
 router.get("/:ticker", async (req: Request, res: Response) => {
@@ -57,98 +46,13 @@ router.get("/:ticker", async (req: Request, res: Response) => {
     if (!/^[A-Z0-9.:-]{1,20}$/.test(ticker)) {
       return res.status(400).json({ error: "Invalid ticker" });
     }
-
-    const cached = cache.get(ticker);
-    if (cached && cached.expiresAt > Date.now()) {
-      return res.json(cached.result);
+    const fresh = await freshness(res);
+    if (!fresh) return;
+    if (!isOurTicker(ticker)) { // the job only collects news for the tickers in newsRules.ts NAMES
+      return res.json({ ticker, pick: null, checked: 0, ...fresh, status: "not_tracked" });
     }
-
-    const apiKey = process.env.POLYGON_API_KEY;
-    if (!apiKey) {
-      return res.status(500).json({ error: "POLYGON_API_KEY is not configured on the server" });
-    }
-
-    const sinceDate = new Date(Date.now() - DAYS * 24 * 60 * 60 * 1000);
-    const since = sinceDate.toISOString().replace(/\.\d{3}Z$/, "Z");
-    // Start reading the company's SEC filing list while Massive answers.
-    const listed = listFilings(ticker);
-    listed.catch(() => {}); // reported below, once the news is in
-
-    const url = new URL(`${POLYGON_BASE_URL}/v2/reference/news`);
-    url.searchParams.set("ticker", ticker);
-    url.searchParams.set("published_utc.gte", since);
-    url.searchParams.set("order", "desc");
-    url.searchParams.set("sort", "published_utc");
-    url.searchParams.set("limit", String(PAGE_LIMIT));
-    url.searchParams.set("apiKey", apiKey);
-
-    // Follow next_url until the whole 14 days is in, like news_spike.py's fetch().
-    const articles: MassiveArticle[] = [];
-    let next: string | null = url.toString();
-    for (let page = 0; next && page < MAX_PAGES; page += 1) {
-      const upstream = await fetch(next, { method: "GET" });
-      if (!upstream.ok) {
-        const text = await upstream.text();
-        console.error("Massive news error:", upstream.status, text);
-        return res.status(upstream.status).json({
-          error: "Polygon API error",
-          status: upstream.status,
-          body: text,
-        });
-      }
-      const data = (await upstream.json()) as { results?: MassiveArticle[]; next_url?: string };
-      articles.push(...(data.results ?? []));
-      next = data.next_url ? withKey(data.next_url, apiKey) : null;
-    }
-
-    const ownPatterns = namePatterns[ticker] ?? compileNames([], ticker);
-    const result: NewsResult = { ticker, pick: null, checked: 0 };
-
-    // Same steps as news_spike.py's analyze(), for this one ticker. Results arrive newest
-    // first, so the first article that passes is the pick.
-    for (const article of articles) {
-      const tagged = dedupe((article.tickers ?? []).map(alias));
-      if (!tagged.includes(ticker)) continue;
-      result.checked += 1;
-      if (result.pick) continue;
-
-      const title = normalizeTitle(article.title ?? "");
-      const publisher = article.publisher?.name ?? "";
-      const ours = tagged.filter(isOurTicker);
-      const namedCount = ours.filter((t) => namePatterns[t].some((p) => p.test(title))).length;
-      const [verdict, , event] = classify(title, publisher, tagged, ticker, ownPatterns, namedCount);
-      if (verdict === "show") {
-        result.pick = {
-          title,
-          url: article.article_url ?? "",
-          publisher,
-          published_utc: article.published_utc ?? "",
-          event,
-          source: "news",
-        };
-      }
-    }
-
-    // An 8-K or 6-K that passes the filing rules (filingRules.ts) wins if it is newer than the article.
-    try {
-      const newerThan = result.pick ? new Date(result.pick.published_utc) : null;
-      const filing = await newestFiling(await listed, sinceDate, newerThan);
-      if (filing) {
-        result.pick = {
-          title: filing.title,
-          url: filing.url,
-          publisher: filing.form,
-          published_utc: filing.accepted_utc,
-          event: filing.event,
-          source: "sec",
-        };
-      }
-    } catch (error: any) {
-      console.error("SEC filings error:", error.message); // the news pick still stands
-    }
-
-    cache.set(ticker, { expiresAt: Date.now() + CACHE_MS, result });
-    return res.json(result);
+    const [news] = await tickerPicks([ticker]);
+    return res.json({ ...news, ...fresh });
   } catch (error: any) {
     console.error("Error in news route:", error);
     return res.status(500).json({ error: error.message || "News lookup failed" });

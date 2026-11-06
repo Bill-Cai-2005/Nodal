@@ -24,6 +24,15 @@ const formatEasternTime = (iso: string) => {
   return `${formatted} ET`;
 };
 
+// Only when the server's news job has fallen behind (status "stale"); fresh news needs no note.
+const staleNote = (news: TickerNewsResponse) => {
+  if (news.status !== "stale") return "";
+  if (!news.fetched_at || !news.filings_checked_at) return "News may be out of date";
+  const oldest = Math.min(new Date(news.fetched_at).getTime(), new Date(news.filings_checked_at).getTime());
+  const hours = Math.floor((Date.now() - oldest) / 3_600_000);
+  return `News last updated ${hours < 48 ? `${hours} hr` : `${Math.floor(hours / 24)} days`} ago`;
+};
+
 // Latest material news for one ticker, shown inside an expanded watchlist row.
 const TickerNews = ({ ticker }: Props) => {
   const [news, setNews] = useState<TickerNewsResponse | undefined>(() =>
@@ -61,6 +70,8 @@ const TickerNews = ({ ticker }: Props) => {
         <div style={mutedTextStyle}>Couldn't load news right now.</div>
       ) : !news ? (
         <div style={mutedTextStyle}>Loading latest news…</div>
+      ) : news.status === "not_tracked" ? (
+        <div style={mutedTextStyle}>News isn't collected for this ticker yet.</div>
       ) : !pick ? (
         <div style={mutedTextStyle}>No major news in the last 14 days</div>
       ) : (
@@ -115,6 +126,11 @@ const TickerNews = ({ ticker }: Props) => {
               {formatEasternTime(pick.published_utc)}
             </div>
           </div>
+        </div>
+      )}
+      {news && staleNote(news) && (
+        <div style={{ ...mutedTextStyle, fontSize: "0.75rem", marginTop: "0.25rem" }}>
+          {staleNote(news)}
         </div>
       )}
     </div>

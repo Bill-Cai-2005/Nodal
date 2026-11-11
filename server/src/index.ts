@@ -21,6 +21,8 @@ import polygonProxyRouter from "./routes/polygonProxy.js";
 import companySummaryRouter from "./routes/companySummary.js";
 import adminRouter from "./routes/admin.js";
 import connectionsRouter from "./routes/connections.js";
+import newsRouter from "./routes/news.js";
+import newsFeedRouter from "./routes/newsFeed.js";
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
@@ -95,6 +97,9 @@ app.use("/api/polygon", polygonProxyRouter);
 app.use("/api/company-summary", companySummaryRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/connections", connectionsRouter);
+app.use("/api/news", newsRouter);
+// Its own path: under /api/news, "/feed" would be read as a ticker by /api/news/:ticker.
+app.use("/api/news-feed", newsFeedRouter);
 
 // Health check
 app.get("/health", (_req: express.Request, res: express.Response) => {

@@ -6,6 +6,7 @@ import {
   formatPercentChange,
   percentChangeColor,
 } from "../../utils/watchlistUtils";
+import TickerNews from "./TickerNews";
 
 type Props = {
   data: StockData[];
@@ -212,6 +213,7 @@ const CustomWatchlistsTable = ({
                           </div>
                         </div>
                       )}
+                      <TickerNews ticker={ticker} />
                     </td>
                   </tr>
                 )}

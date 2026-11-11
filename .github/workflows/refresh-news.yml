@@ -1,0 +1,58 @@
+# Collects the latest Massive news and SEC 8-K/6-K filings for all of our tickers, judges each new
+# article once, and saves the results in MongoDB (server/src/jobs/ingestNews.ts). The site's
+# GET /api/news and GET /api/news-feed read those results, so rows and the News tab never wait on
+# Massive or the SEC. It runs here rather than on the Render backend, which sleeps when idle.
+# Setup (secrets and variables): docs/news-job-setup.md
+name: Refresh news
+
+on:
+  schedule:
+    # Every 10 minutes on weekdays from about 6 AM to 8 PM New York time, hourly otherwise.
+    # Cron times are UTC and don't follow daylight saving, so the 10-minute window is 10:00-01:59
+    # UTC: 6:00 AM-9:59 PM in summer (EDT), 5:00 AM-8:59 PM in winter (EST).
+    # GitHub often starts scheduled runs a few minutes late (more at busy times, especially the
+    # top of the hour, hence :02 and :07), and may skip one now and then. Each run re-reads what
+    # the previous one could have missed, so a late or skipped run only delays news.
+    - cron: "2,12,22,32,42,52 10-23 * * 1-5" # Mon-Fri 10:00-23:59 UTC
+    - cron: "2,12,22,32,42,52 0-1 * * 2-6" # Tue-Sat 00:00-01:59 UTC (Mon-Fri evening in New York)
+    - cron: "7 2-9 * * 2-6" # Tue-Sat overnight, hourly
+    - cron: "7 0-9 * * 1" # Sunday evening into Monday morning (New York), hourly
+    - cron: "7 10-23 * * 6" # Saturday daytime, hourly
+    - cron: "7 * * * 0" # Sunday, hourly
+  workflow_dispatch: # "Run workflow" button on the Actions tab
+
+# One run at a time; a run that is due while another is going waits for it.
+concurrency:
+  group: refresh-news
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      # MONGOMS_DISABLE_POSTINSTALL: skip downloading the test database that only the tests use.
+      - run: npm ci --no-audit --no-fund
+        env:
+          MONGOMS_DISABLE_POSTINSTALL: "1"
+
+      - name: Collect news
+        env:
+          MONGO_URI: ${{ secrets.MONGO_URI }}
+          POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
+          SEC_USER_AGENT: ${{ vars.SEC_USER_AGENT }} # same variable the pair-data workflow uses
+        run: npm run ingest-news

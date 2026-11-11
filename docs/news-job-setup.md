@@ -11,7 +11,7 @@ Render backend sleeps when nobody is using it.
 
 | Name | Kind | Value |
 | --- | --- | --- |
-| `MONGO_URI` | Secret | The same Atlas connection string the Render backend uses. The one in the committed root `.env` needs rotating; use the new one. |
+| `MONGO_URI` | Secret | The same Atlas connection string the Render backend uses. |
 | `POLYGON_API_KEY` | Secret | The Massive (Polygon) API key the backend uses. |
 | `SEC_USER_AGENT` | Variable | A name and a contact email the SEC can reach, e.g. `Nodal Research ops@yourdomain.com`. The SEC requires this. It is the same variable `refresh-pair-data.yml` reads, so if that is already set there is nothing to do. |
 

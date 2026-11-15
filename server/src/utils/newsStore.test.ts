@@ -14,6 +14,7 @@ const { default: NewsArticle } = await import("../models/NewsArticle.js");
 const { default: NewsRun } = await import("../models/NewsRun.js");
 const { default: NewsVerdict } = await import("../models/NewsVerdict.js");
 const { storeNewArticles } = await import("../jobs/ingestNews.js");
+const { AiCheck } = await import("./newsAi.js");
 const { classify, compileNames, NAMES } = await import("./newsRules.js");
 const store = await import("./newsStore.js");
 
@@ -97,6 +98,35 @@ test("gives each article-ticker pair the old routes' verdict, including the 3-co
   }
   assert.equal((await NewsVerdict.findOne({ article_id: "news:r1", ticker: "NVDA" }).lean())?.reason, "market roundup");
   assert.deepEqual((await NewsArticle.findById("news:r2").lean())?.tickers, ["NVDA", "AMD", "GOOG"]); // GOOGL counts as GOOG
+});
+
+test("with the AI check on, its answer makes the call and the rules' verdict is kept beside it", async () => {
+  // A stand-in for Claude that calls this headline an opinion piece, which the rules showed as earnings news.
+  const ai = new AiCheck({
+    messages: {
+      create: async () => ({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: JSON.stringify({ tickers: [
+          { ticker: "MU", why: "Opinion on whether to buy the stock.", about_company: true, category: "opinion / listicle" },
+        ] }) }],
+        usage: { input_tokens: 120, output_tokens: 40, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+      }) as never,
+    },
+  });
+  const result = await storeNewArticles([
+    article("ai1", "Micron Earnings Beat Estimates: Time to Buy?", ["MU"], 1),
+    article("ai2", "Class Action Filed Against Micron, Rosen Law Firm Announces", ["MU"], 2), // an ad: not sent
+  ], now, ai);
+
+  const saved = await NewsVerdict.findOne({ article_id: "news:ai1", ticker: "MU" }).lean();
+  assert.deepEqual(
+    { verdict: saved?.verdict, reason: saved?.reason, judge: saved?.judge, rules: saved?.rules?.verdict },
+    { verdict: "drop", reason: "opinion / listicle", judge: "ai", rules: "show" },
+  );
+  assert.deepEqual(saved?.ai, { version: ai.version, note: "Opinion on whether to buy the stock." });
+  assert.equal((await NewsVerdict.findOne({ article_id: "news:ai2", ticker: "MU" }).lean())?.judge, "rules");
+  assert.equal(result.shown, 0);
+  assert.deepEqual([ai.stats.calls, ai.stats.skipped_ads], [1, 1]);
 });
 
 test("latest pick per ticker: newest that passed, an article wins a tie with a filing, 14 days back", async () => {

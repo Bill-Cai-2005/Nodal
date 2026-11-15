@@ -55,4 +55,5 @@ jobs:
           MONGO_URI: ${{ secrets.MONGO_URI }}
           POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
           SEC_USER_AGENT: ${{ vars.SEC_USER_AGENT }} # same variable the pair-data workflow uses
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }} # optional: without it the rules make every call
         run: npm run ingest-news

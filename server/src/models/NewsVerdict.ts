@@ -10,10 +10,14 @@ export interface INewsVerdict extends Judgement {
   source: "news" | "sec";
   published_at: Date; // copied from the article so the queries below need only this collection
   // event: the event type when shown, e.g. "Earnings / guidance"; reason: why it was dropped
-  judge: "rules" | "ai"; // who made the call: the rules today, the AI check once it is approved
+  judge: "rules" | "ai"; // who made the call: the AI check (utils/newsAi.ts) when it ran, else the rules
   rules: Judgement; // what the rules said, kept even when the AI makes the call, to compare the two
+  ai?: AiNote; // only when judge is "ai"
   judged_at: Date;
 }
+
+// Which version of the AI check made the call (see AI_VERSION in utils/newsAi.ts), and its one-line reason.
+export type AiNote = { version: string; note: string };
 
 const JudgementSchema = new Schema<Judgement>(
   {
@@ -35,6 +39,10 @@ const NewsVerdictSchema = new Schema<INewsVerdict>(
     reason: { type: String, default: "" },
     judge: { type: String, enum: ["rules", "ai"], required: true },
     rules: { type: JudgementSchema, required: true },
+    ai: {
+      type: new Schema<AiNote>({ version: { type: String, default: "" }, note: { type: String, default: "" } }, { _id: false }),
+      default: undefined,
+    },
     judged_at: { type: Date, required: true },
   },
   { collection: "news_verdicts", versionKey: false },

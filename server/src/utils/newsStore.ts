@@ -2,7 +2,7 @@
 // GET /api/news and GET /api/news-feed read back. The site never calls Massive or the SEC itself.
 import NewsArticle, { type INewsArticle } from "../models/NewsArticle.js";
 import NewsRun from "../models/NewsRun.js";
-import NewsVerdict, { type INewsVerdict, type Judgement } from "../models/NewsVerdict.js";
+import NewsVerdict, { type AiNote, type INewsVerdict, type Judgement } from "../models/NewsVerdict.js";
 import { ALIASES, NAMES, classify, compileNames, dedupe, normalizeTitle } from "./newsRules.js";
 
 export const PICK_DAYS = 14; // how far back a ticker's "latest news" may reach
@@ -90,7 +90,7 @@ export async function storedFilingIds(ticker: string, ids: string[]) {
 
 export type Judged = {
   article: INewsArticle;
-  verdicts: (PairVerdict & { judge: "rules" | "ai"; rules: Judgement })[];
+  verdicts: (PairVerdict & { judge: "rules" | "ai"; rules: Judgement; ai?: AiNote })[];
 };
 
 /** Saves articles with their verdicts. Saving the same article twice changes nothing. Verdicts
@@ -107,6 +107,7 @@ export async function saveJudged(items: Judged[], now: Date) {
     reason: v.reason,
     judge: v.judge,
     rules: v.rules,
+    ...(v.ai ? { ai: v.ai } : {}),
     judged_at: now,
   })));
   await NewsVerdict.bulkWrite(verdicts.map((v) => ({

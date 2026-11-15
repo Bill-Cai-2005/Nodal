@@ -1,4 +1,5 @@
 import mongoose, { Schema } from "mongoose";
+import type { AiStats } from "../utils/newsAi.js";
 
 // One run of the scheduled news job. The site reads these to say how fresh the news is, and the
 // job reads them to know where the previous run left off.
@@ -29,6 +30,7 @@ export interface INewsRun {
     ciks?: Record<string, number>; // "full" mode: our ticker -> SEC company number, used by "recent" runs
   };
   pruned: { articles: number; verdicts: number; runs: number };
+  ai?: AiStats; // the AI check's calls, tokens and cost; enabled is false when ANTHROPIC_API_KEY isn't set
 }
 
 const NewsRunSchema = new Schema<INewsRun>(
@@ -38,6 +40,7 @@ const NewsRunSchema = new Schema<INewsRun>(
     news: { type: Schema.Types.Mixed, required: true },
     sec: { type: Schema.Types.Mixed, required: true },
     pruned: { type: Schema.Types.Mixed, default: {} },
+    ai: { type: Schema.Types.Mixed },
   },
   { collection: "news_runs", versionKey: false, minimize: false },
 );

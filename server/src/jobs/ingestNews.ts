@@ -3,8 +3,9 @@
 // GET /api/news-feed then answer from the database, so the site never waits on Massive or the SEC.
 //
 // Run by .github/workflows/refresh-news.yml. By hand, from server/:  npm run ingest-news
-// Needs MONGO_URI, POLYGON_API_KEY and SEC_USER_AGENT in the environment. It reads no .env file,
-// so it only ever writes to the database it is explicitly given.
+// Needs MONGO_URI, POLYGON_API_KEY and SEC_USER_AGENT in the environment, and ANTHROPIC_API_KEY for
+// the AI check (optional). It reads no .env file, so it only ever writes to the database it is
+// explicitly given.
 import mongoose from "mongoose";
 import fetch from "node-fetch";
 import { pathToFileURL } from "url";
@@ -12,6 +13,7 @@ import NewsRun, { type INewsRun } from "../models/NewsRun.js";
 import type { INewsArticle } from "../models/NewsArticle.js";
 import type { Judgement } from "../models/NewsVerdict.js";
 import connectDB from "../utils/connectDB.js";
+import { AiCheck, aiStats, mapLimit } from "../utils/newsAi.js";
 import { listFilings, newestFiling, type Listed } from "../utils/edgar.js";
 import { hasPressItem, newsworthy } from "../utils/filingRules.js";
 import {
@@ -46,29 +48,25 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const isoSeconds = (date: Date) => date.toISOString().replace(/\.\d{3}Z$/, "Z");
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
-// =====================================================================================================
-// AI CHECK: NOT ENABLED. The AI relevance check (a small Claude model, about $1-5 a month) is waiting
-// on budget approval. When it is approved, it goes in this one function:
-//   - The job calls it once for each NEW article or filing (stored ones are never judged again),
-//     with the rules' verdict for each of our tickers the article is tagged with.
-//   - Return a verdict for a ticker to make the call (saved with judge "ai"; the rules' verdict is
-//     kept next to it for comparison), or null to keep the rules' verdicts (saved with judge "rules").
-//   - Read the API key from an environment variable and add it to refresh-news.yml as a secret.
-// Until then it must not call any AI API.
-// =====================================================================================================
-export async function judgeWithAi(article: INewsArticle, rules: PairVerdict[]): Promise<Map<string, Judgement> | null> {
-  return null;
-}
+// The AI check (utils/newsAi.ts) makes the call on each NEW Massive article when ANTHROPIC_API_KEY is
+// set; stored articles are never judged again. Without the key, for ads and big roundups, past the
+// run's call limit, or when a call fails, the rules' verdicts are kept. SEC filings always keep the
+// rules' verdicts: their item numbers already say what happened.
+const AI_MAX_CALLS = 200; // per run; the first run's 14-day backfill has ~1,700 articles, newest go first
+const AI_CONCURRENCY = 4;
 
-/** Asks the AI check (judgeWithAi) about one new article and merges its answer with the rules'. */
-async function judge(article: INewsArticle, rules: PairVerdict[]): Promise<Judged> {
-  const ai = await judgeWithAi(article, rules);
+/** Asks the AI check about one new article and merges its answer with the rules'. */
+async function judge(article: INewsArticle, rules: PairVerdict[], ai: AiCheck | null): Promise<Judged> {
+  const answer = ai && article.source === "news" ? await ai.judge(article, rules) : null;
   return {
     article,
     verdicts: rules.map(({ ticker, verdict, event, reason }) => {
       const byRules: Judgement = { verdict, event, reason };
-      const byAi = ai?.get(ticker);
-      return byAi ? { ticker, ...byAi, judge: "ai", rules: byRules } : { ticker, ...byRules, judge: "rules", rules: byRules };
+      const byAi = answer?.get(ticker);
+      return byAi && ai
+        ? { ticker, verdict: byAi.verdict, event: byAi.event, reason: byAi.reason, judge: "ai", rules: byRules,
+            ai: { version: ai.version, note: byAi.note } }
+        : { ticker, ...byRules, judge: "rules", rules: byRules };
     }),
   };
 }
@@ -109,17 +107,18 @@ async function fetchMassive(since: Date, apiKey: string) {
 }
 
 /** Judges and saves the articles that aren't stored yet. Exported for the tests. */
-export async function storeNewArticles(articles: MassiveArticle[], now: Date) {
+export async function storeNewArticles(articles: MassiveArticle[], now: Date, ai: AiCheck | null = null) {
   const ours = new Map<string, NonNullable<ReturnType<typeof judgeByRules>>>();
   for (const article of articles) {
     const judged = judgeByRules(article, now);
     if (judged && !ours.has(judged.article._id)) ours.set(judged.article._id, judged);
   }
   const stored = await storedArticleIds([...ours.keys()]);
-  const items: Judged[] = [];
-  for (const { article, verdicts } of ours.values()) {
-    if (!stored.has(article._id)) items.push(await judge(article, verdicts));
-  }
+  // Newest first, so if the AI's call limit runs out it's the older articles that keep the rules' verdicts.
+  const fresh = [...ours.values()]
+    .filter(({ article }) => !stored.has(article._id))
+    .sort((a, b) => b.article.published_at.getTime() - a.article.published_at.getTime());
+  const items = await mapLimit(fresh, AI_CONCURRENCY, ({ article, verdicts }) => judge(article, verdicts, ai));
   await saveJudged(items, now);
   const pairs = items.flatMap((item) => item.verdicts);
   return {
@@ -131,7 +130,7 @@ export async function storeNewArticles(articles: MassiveArticle[], now: Date) {
   };
 }
 
-async function runNews(now: Date): Promise<INewsRun["news"]> {
+async function runNews(now: Date, ai: AiCheck | null): Promise<INewsRun["news"]> {
   const news: INewsRun["news"] = {
     ok: false, since: null, pages: 0, fetched: 0, ours: 0, new_articles: 0, skipped: 0, pairs: 0, shown: 0, error: "",
   };
@@ -146,7 +145,7 @@ async function runNews(now: Date): Promise<INewsRun["news"]> {
       : backfill;
     news.since = since;
     const { articles, pages } = await fetchMassive(since, apiKey);
-    Object.assign(news, { pages, fetched: articles.length }, await storeNewArticles(articles, now));
+    Object.assign(news, { pages, fetched: articles.length }, await storeNewArticles(articles, now, ai));
     news.ok = true;
   } catch (error) {
     news.error = message(error);
@@ -246,7 +245,7 @@ async function checkCompanies(tickers: string[], now: Date) {
         cik: listed.company.cik,
         first_seen_at: now,
       };
-      items.push(await judge(article, [rules]));
+      items.push(await judge(article, [rules], null));
       result.new_filings += 1;
       if (items.at(-1)!.verdicts[0].verdict === "show") result.shown += 1;
     }
@@ -291,11 +290,14 @@ async function runSec(now: Date): Promise<INewsRun["sec"]> {
 // -----------------------------------------------------------------------------------------------------
 
 /** One run of the job, against whatever database mongoose is connected to. */
-export async function runIngest(now = new Date()) {
-  const news = await runNews(now);
+export async function runIngest(now = new Date(), ai: AiCheck | null = AiCheck.fromEnv(AI_MAX_CALLS)) {
+  const news = await runNews(now, ai);
   const sec = await runSec(now);
   const pruned = await pruneBefore(daysBefore(now, KEEP_DAYS));
-  const run: INewsRun = { started_at: now, finished_at: new Date(), news, sec, pruned };
+  const run: INewsRun = {
+    started_at: now, finished_at: new Date(), news, sec, pruned,
+    ai: ai?.stats ?? aiStats(false),
+  };
   await NewsRun.create(run);
   return run;
 }
@@ -316,6 +318,13 @@ async function main() {
         + `${sec.companies} companies read, ${sec.new_filings} new filings (${sec.shown} shown), ${sec.skipped} already stored`
       : `  SEC FAILED: ${sec.error}`);
     console.log(`  Pruned (older than ${KEEP_DAYS} days): ${run.pruned.articles} articles, ${run.pruned.verdicts} verdicts, ${run.pruned.runs} runs`);
+    const ai = run.ai;
+    console.log(!ai?.enabled
+      ? "  AI check: off (ANTHROPIC_API_KEY is not set), the rules made every call"
+      : `  AI check (${ai.model}, version ${ai.version}): ${ai.calls} calls, ${ai.failed} failed, skipped ${ai.skipped_ads} ads, `
+        + `${ai.skipped_roundups} big roundups and ${ai.skipped_budget} over the limit; `
+        + `${ai.input_tokens + ai.cache_write_tokens + ai.cache_read_tokens} input and ${ai.output_tokens} output tokens, about $${ai.cost_usd.toFixed(4)}`
+        + (ai.error ? `; last error: ${ai.error}` : ""));
     if (!news.ok || !sec.ok) process.exitCode = 1; // shows as a failed run on GitHub
   } finally {
     await mongoose.disconnect();

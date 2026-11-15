@@ -11,7 +11,8 @@
       "news-filings": false,
       "news-feed-v0": false,
       "news-release-1": false,
-      "news-job": false
+      "news-job": false,
+      "news-ai-check": false
     }
   }
 }
